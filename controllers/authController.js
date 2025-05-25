@@ -292,16 +292,43 @@ exports.forgotPassword = async (req, res) => {
 exports.searchUsers = async (req, res) => {
   try {
     const { query } = req.query;
+    
+    if (!query || query.trim().length < 1) {
+      return res.json([]);
+    }
+    
+    const searchTerm = query.trim();
+    
     const users = await User.find({
       $or: [
-        { username: { $regex: query, $options: 'i' } },
-        { firstName: { $regex: query, $options: 'i' } },
-        { lastName: { $regex: query, $options: 'i' } }
+        { username: { $regex: searchTerm, $options: 'i' } },
+        { firstName: { $regex: searchTerm, $options: 'i' } },
+        { lastName: { $regex: searchTerm, $options: 'i' } },
+        { 
+          $expr: {
+            $regexMatch: {
+              input: { $concat: ["$firstName", " ", "$lastName"] },
+              regex: searchTerm,
+              options: "i"
+            }
+          }
+        }
       ]
-    }).select('username firstName lastName profileImage');
+    }).select('username firstName lastName profileImage bio').limit(20);
     
-    res.json(users);
+    console.log(`Search query: "${searchTerm}", Found ${users.length} users`); // Debug log
+    
+    // ProfileImage path'ini düzelt
+    const usersWithImage = users.map(user => ({
+      ...user.toObject(),
+      profileImage: user.profileImage && user.profileImage !== 'image.jpg' 
+        ? user.profileImage 
+        : null
+    }));
+    
+    res.json(usersWithImage);
   } catch (err) {
+    console.error('Search error:', err); // Debug log
     res.status(500).json({ message: err.message });
   }
 };
@@ -352,13 +379,33 @@ exports.unfollowUser = async (req, res) => {
   }
 };
 
+// Güncellenmiş getUserById - public profil görüntüleme için
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('-password -resetToken -resetTokenExpire');
+    const user = await User.findById(req.params.id)
+      .select('-password -resetToken -resetTokenExpire -email -phone')
+      .populate('followers', 'username firstName lastName profileImage')
+      .populate('following', 'username firstName lastName profileImage');
+    
     if (!user) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
     }
-    res.json(user);
+    
+    // ProfileImage path'ini düzelt
+    const userWithImage = {
+      ...user.toObject(),
+      profileImage: user.profileImage && user.profileImage !== 'image.jpg' 
+        ? user.profileImage 
+        : null,
+      // Ek resimler için URL'leri düzelt
+      additionalImages: user.additionalImages?.map(img => ({
+        filename: img.filename,
+        url: `/uploads/${img.filename}`,
+        uploadDate: img.uploadDate
+      })) || []
+    };
+    
+    res.json(userWithImage);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -374,7 +421,22 @@ exports.getCurrentUser = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
     }
-    res.json(user);
+    
+    // ProfileImage path'ini düzelt
+    const userWithImage = {
+      ...user.toObject(),
+      profileImage: user.profileImage && user.profileImage !== 'image.jpg' 
+        ? user.profileImage 
+        : null,
+      // Ek resimler için URL'leri düzelt
+      additionalImages: user.additionalImages?.map(img => ({
+        filename: img.filename,
+        url: `/uploads/${img.filename}`,
+        uploadDate: img.uploadDate
+      })) || []
+    };
+    
+    res.json(userWithImage);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

@@ -10,7 +10,11 @@ router.post('/forgot-password', authController.forgotPassword);
 router.get('/search', authController.searchUsers);
 router.post('/follow/:targetUserId', authMiddleware, authController.followUser);
 router.post('/unfollow/:targetUserId', authMiddleware, authController.unfollowUser);
-router.get('/user/:id', authMiddleware, authController.getUserById); 
+
+// Public route - kimse erişebilir (auth gerekmez)
+router.get('/user/:id', authController.getUserById); 
+
+// Private route - sadece giriş yapmış kullanıcılar
 router.get('/me', authMiddleware, authController.getCurrentUser);
 
 // Profil resmi yükleme
