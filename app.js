@@ -7,6 +7,7 @@ const cors = require('cors');
 const playlistRoutes = require('./routes/playlistRoutes');
 const downloadRoutes = require('./routes/downloadRoutes');
 const sampleRoutes = require('./routes/sampleRoutes');
+const hotRoutes = require('./routes/hotRoutes');
 dotenv.config();
 const app = express();
 
@@ -17,6 +18,7 @@ app.use('/api', authRoutes);
 app.use('/api/download', downloadRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/playlists', playlistRoutes);
+app.use('/api/hot', hotRoutes);
 app.use('/assets', express.static('assets'));
 app.use('/uploads', express.static('uploads'));
 

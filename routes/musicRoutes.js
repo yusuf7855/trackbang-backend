@@ -3,6 +3,7 @@ const router = express.Router();
 const musicController = require('../controllers/musicController');
 
 router.get('/', musicController.getAllMusic);
+router.get('/top10', musicController.getTop10ByCategory);
 router.get('/search', musicController.searchMusic);
 router.get('/search-private', musicController.searchPrivateContent);
 router.get('/search-public', musicController.searchPublicContent);
