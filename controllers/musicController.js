@@ -243,6 +243,7 @@ exports.searchPrivateContent = async (req, res) => {
   }
 };
 
+
 exports.searchPublicContent = async (req, res) => {
   try {
     const { query } = req.query;
@@ -278,6 +279,65 @@ exports.searchPublicContent = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Server error during search',
+      error: err.message 
+    });
+  }
+};
+
+// Get Top 10 most liked songs by category
+exports.getTop10ByCategory = async (req, res) => {
+  try {
+    const categories = ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'];
+    const top10Data = {};
+
+    for (const category of categories) {
+      const top10 = await Music.find({ category })
+        .sort({ likes: -1 })
+        .limit(10)
+        .lean();
+
+      top10Data[category] = top10.map((music, index) => ({
+        _id: music._id,
+        rank: index + 1,
+        title: music.title,
+        artist: music.artist,
+        spotifyId: music.spotifyId,
+        category: music.category,
+        likes: music.likes || 0,
+        userLikes: music.userLikes || [],
+        beatportUrl: music.beatportUrl || '',
+        createdAt: music.createdAt
+      }));
+    }
+
+    // Overall top 10 across all categories
+    const overallTop10 = await Music.find({})
+      .sort({ likes: -1 })
+      .limit(10)
+      .lean();
+
+    top10Data.all = overallTop10.map((music, index) => ({
+      _id: music._id,
+      rank: index + 1,
+      title: music.title,
+      artist: music.artist,
+      spotifyId: music.spotifyId,
+      category: music.category,
+      likes: music.likes || 0,
+      userLikes: music.userLikes || [],
+      beatportUrl: music.beatportUrl || '',
+      createdAt: music.createdAt
+    }));
+
+    res.json({
+      success: true,
+      top10: top10Data
+    });
+  } catch (err) {
+    console.error('Error fetching top 10:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error while fetching top 10',
       error: err.message 
     });
   }
