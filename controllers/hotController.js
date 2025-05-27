@@ -297,3 +297,139 @@ exports.removeMusicFromHot = async (req, res) => {
     });
   }
 };
+exports.getAllHots = async (req, res) => {
+  try {
+    const { category, isActive } = req.query;
+    
+    let filter = {};
+    if (category && category !== 'all') {
+      filter.category = category;
+    }
+    if (isActive !== undefined) {
+      filter.isActive = isActive === 'true';
+    }
+
+    const hots = await Hot.find(filter)
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+      })
+      .sort({ 
+        isActive: -1,  // Aktif olanları önce göster
+        order: 1,      // Sıra numarasına göre sırala
+        createdAt: -1  // Sonra oluşturulma tarihine göre
+      })
+      .lean();
+
+    res.json({
+      success: true,
+      hots: hots.map(hot => ({
+        _id: hot._id,
+        name: hot.name,
+        description: hot.description,
+        category: hot.category,
+        isActive: hot.isActive,
+        order: hot.order,
+        musicCount: hot.musics?.length || 0,
+        musics: hot.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: hot.createdAt,
+        updatedAt: hot.updatedAt
+      }))
+    });
+  } catch (err) {
+    console.error('Error fetching hot playlists:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching hot playlists',
+      error: err.message 
+    });
+  }
+};
+
+// Yeni metod: HOT playlist sırasını güncelleme
+exports.updateHotOrder = async (req, res) => {
+  try {
+    const { hotIds } = req.body; // Array of hot playlist IDs in new order
+    
+    if (!Array.isArray(hotIds)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'hotIds must be an array' 
+      });
+    }
+
+    // Update order for each hot playlist
+    const updatePromises = hotIds.map((hotId, index) => 
+      Hot.findByIdAndUpdate(hotId, { order: index }, { new: true })
+    );
+
+    await Promise.all(updatePromises);
+
+    res.json({
+      success: true,
+      message: 'HOT playlist order updated successfully'
+    });
+  } catch (err) {
+    console.error('Error updating hot playlist order:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error updating hot playlist order',
+      error: err.message 
+    });
+  }
+};
+
+// Yeni metod: HOT playlist'i kopyalama
+exports.duplicateHot = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const originalHot = await Hot.findById(id);
+    if (!originalHot) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'HOT playlist not found' 
+      });
+    }
+
+    // Create duplicate with modified name
+    const duplicateHot = new Hot({
+      name: `${originalHot.name} (Copy)`,
+      description: originalHot.description,
+      musics: [...originalHot.musics],
+      category: originalHot.category,
+      isActive: false, // Start as inactive
+      order: await Hot.countDocuments() // Put at the end
+    });
+
+    await duplicateHot.save();
+
+    const populatedHot = await Hot.findById(duplicateHot._id)
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+      });
+
+    res.status(201).json({
+      success: true,
+      message: 'HOT playlist duplicated successfully',
+      hot: populatedHot
+    });
+  } catch (err) {
+    console.error('Error duplicating hot playlist:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error duplicating hot playlist',
+      error: err.message 
+    });
+  }
+};
