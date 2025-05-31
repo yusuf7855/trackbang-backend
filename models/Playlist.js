@@ -12,11 +12,18 @@ const playlistSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Music' 
   }],
-  genre: {
+  // Ana kategori
+  mainCategory: {
     type: String,
     required: true,
-    enum: ['pop', 'rock', 'hiphop', 'jazz', 'classical', 'electronic', 'rnb', 'country', 'other'],
-    default: 'other'
+    enum: ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'],
+  },
+  // Alt kategori/Katalog numarası (AH1, MH1, vb.)
+  subCategory: {
+    type: String,
+    required: true,
+    uppercase: true,
+    trim: true
   },
   isPublic: {
     type: Boolean,
@@ -43,4 +50,8 @@ playlistSchema.index({
     strength: 2 // Case insensitive
   }
 });
+
+// Main category ve sub category kombinasyonu unique olmalı
+playlistSchema.index({ mainCategory: 1, subCategory: 1 }, { unique: true });
+
 module.exports = mongoose.model('Playlist', playlistSchema);

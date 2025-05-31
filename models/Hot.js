@@ -1,48 +1,10 @@
-const mongoose = require('mongoose');
+const express = require('express');
+const router = express.Router();
+const hotController = require('../controllers/hotController');
 
-const hotSchema = new mongoose.Schema({
-  name: { 
-    type: String, 
-    required: true 
-  },
-  description: { 
-    type: String, 
-    default: '' 
-  },
-  musics: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Music' 
-  }],
-  category: {
-    type: String,
-    enum: ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse', 'all'],
-    default: 'all'
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  },
-  order: {
-    type: Number,
-    default: 0
-  },
-  createdAt: { 
-    type: Date, 
-    default: Date.now 
-  },
-  updatedAt: { 
-    type: Date, 
-    default: Date.now 
-  }
-});
+// HOT playlist routes (mobil uygulama için)
+router.get('/', hotController.getHotPlaylists);
+router.get('/category/:category', hotController.getHotPlaylistByCategory);
+router.get('/stats', hotController.getHotStats);
 
-// Update the updatedAt field before saving
-hotSchema.pre('save', function() {
-  this.updatedAt = Date.now();
-});
-
-// Index for better performance
-hotSchema.index({ isActive: 1, order: 1 });
-hotSchema.index({ category: 1, isActive: 1 });
-
-module.exports = mongoose.model('Hot', hotSchema);
+module.exports = router;

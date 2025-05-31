@@ -3,12 +3,13 @@ const router = express.Router();
 const playlistController = require('../controllers/playlistController');
 const authMiddleware = require('../middlewares/authMiddleware');
 
+// Admin playlist routes
 router.post('/', authMiddleware, playlistController.createPlaylist);
+router.get('/', playlistController.getAllPlaylists);
 router.get('/user/:userId', playlistController.getUserPlaylists);
-router.get('/public', playlistController.getPublicPlaylists);
-router.get('/public-world', playlistController.getPublicPlaylistsForWorld);
-router.get('/following/:userId', playlistController.getFollowingPlaylists);
-router.get('/private', authMiddleware, playlistController.getPrivatePlaylists);
-router.get('/search-private', authMiddleware, playlistController.searchPrivatePlaylists);
+router.get('/category/:category', playlistController.getPlaylistsByCategory);
+router.get('/hot/latest', playlistController.getLatestPlaylistsByCategory); // HOT sayfası için
+router.put('/:id', authMiddleware, playlistController.updatePlaylist);
+router.delete('/:id', authMiddleware, playlistController.deletePlaylist);
 
 module.exports = router;
