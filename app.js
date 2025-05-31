@@ -8,26 +8,54 @@ const playlistRoutes = require('./routes/playlistRoutes');
 const downloadRoutes = require('./routes/downloadRoutes');
 const sampleRoutes = require('./routes/sampleRoutes');
 const hotRoutes = require('./routes/hotRoutes');
+
 dotenv.config();
+
 const app = express();
 
-app.use(cors());
+// Middleware
+app.use(cors({
+  origin: 'http://localhost:5173', // Vite default port
+  credentials: true
+}));
 app.use(express.json());
-app.use('/api', sampleRoutes);
-app.use('/api', authRoutes);
+
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.originalUrl}`);
+  next();
+});
+
+// Routes - sıralama önemli
+app.use('/api/samples', sampleRoutes);
 app.use('/api/download', downloadRoutes);
 app.use('/api/music', musicRoutes);
-app.use('/api/playlists', playlistRoutes);
+app.use('/api/playlists', playlistRoutes); // Bu route'da admin için auth yok
 app.use('/api/hot', hotRoutes);
+app.use('/api/auth', authRoutes); // Auth route'ları en sonda
+
+// Static files
 app.use('/assets', express.static('assets'));
 app.use('/uploads', express.static('uploads'));
 
-mongoose.connect("mongodb+srv://221118047:9KY5zsMHQRJyEwGq@cluster0.rz2m5a4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-  .then(() => {
+// Database connection and server start
+async function startServer() {
+  try {
+    await mongoose.connect(process.env.MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true
+    });
+    
     console.log('MongoDB bağlantısı başarılı.');
-    app.listen(5000, () => console.log('Server 5000 portunda çalışıyor.'));
-  })
-  .catch((err) => console.error('MongoDB bağlantı hatası:', err));
+    
+    const PORT = process.env.PORT || 5000;
+    app.listen(PORT, () => {
+      console.log(`Server ${PORT} portunda çalışıyor.`);
+    });
+  } catch (err) {
+    console.error('MongoDB bağlantı hatası:', err);
+    process.exit(1);
+  }
+}
+
+startServer();

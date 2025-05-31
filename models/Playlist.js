@@ -6,7 +6,10 @@ const playlistSchema = new mongoose.Schema({
   userId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
-    required: true 
+    required: function() { 
+      // Sadece kullanıcı playlist'leri için zorunlu
+      return !this.isAdminPlaylist; 
+    }
   },
   musics: [{ 
     type: mongoose.Schema.Types.ObjectId, 
