@@ -1,14 +1,14 @@
 const Playlist = require('../models/Playlist');
 
-// HOT sayfası için her kategoriden son admin playlist'i getir
+// HOT sayfası için her genre'den son admin playlist'i getir
 exports.getHotPlaylists = async (req, res) => {
   try {
-    const categories = ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'];
+    const genres = ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'];
     const hotPlaylists = [];
 
-    for (const category of categories) {
+    for (const genre of genres) {
       const latestPlaylist = await Playlist.findOne({ 
-        mainCategory: category,
+        genre: genre, // mainCategory -> genre
         isAdminPlaylist: true,
         isPublic: true 
       })
@@ -29,7 +29,7 @@ exports.getHotPlaylists = async (req, res) => {
           _id: latestPlaylist._id,
           name: latestPlaylist.name,
           description: latestPlaylist.description || '',
-          mainCategory: latestPlaylist.mainCategory,
+          genre: latestPlaylist.genre, // mainCategory -> genre
           subCategory: latestPlaylist.subCategory,
           musicCount: latestPlaylist.musics?.length || 0,
           owner: {
@@ -53,8 +53,8 @@ exports.getHotPlaylists = async (req, res) => {
       }
     }
 
-    // Kategoriler için display name mapping
-    const categoryDisplayNames = {
+    // Genre'ler için display name mapping
+    const genreDisplayNames = {
       afrohouse: 'Afro House',
       indiedance: 'Indie Dance', 
       organichouse: 'Organic House',
@@ -64,13 +64,13 @@ exports.getHotPlaylists = async (req, res) => {
 
     const response = hotPlaylists.map(playlist => ({
       ...playlist,
-      categoryDisplayName: categoryDisplayNames[playlist.mainCategory] || playlist.mainCategory
+      genreDisplayName: genreDisplayNames[playlist.genre] || playlist.genre
     }));
 
     res.json({
       success: true,
       hotPlaylists: response,
-      message: 'Her kategoriden en son eklenen admin playlist\'ler'
+      message: 'Her genre\'den en son eklenen admin playlist\'ler'
     });
   } catch (err) {
     console.error('Error fetching hot playlists:', err);
@@ -82,13 +82,13 @@ exports.getHotPlaylists = async (req, res) => {
   }
 };
 
-// Kategoriye göre HOT playlist getir
+// Genre'ye göre HOT playlist getir
 exports.getHotPlaylistByCategory = async (req, res) => {
   try {
-    const { category } = req.params;
+    const { category } = req.params; // Bu aslında genre
     
     const latestPlaylist = await Playlist.findOne({ 
-      mainCategory: category,
+      genre: category, // mainCategory -> genre
       isAdminPlaylist: true,
       isPublic: true 
     })
@@ -106,11 +106,11 @@ exports.getHotPlaylistByCategory = async (req, res) => {
     if (!latestPlaylist) {
       return res.status(404).json({
         success: false,
-        message: `${category} kategorisinde henüz admin playlist bulunamadı`
+        message: `${category} genre'sinde henüz admin playlist bulunamadı`
       });
     }
 
-    const categoryDisplayNames = {
+    const genreDisplayNames = {
       afrohouse: 'Afro House',
       indiedance: 'Indie Dance', 
       organichouse: 'Organic House',
@@ -122,9 +122,9 @@ exports.getHotPlaylistByCategory = async (req, res) => {
       _id: latestPlaylist._id,
       name: latestPlaylist.name,
       description: latestPlaylist.description || '',
-      mainCategory: latestPlaylist.mainCategory,
+      genre: latestPlaylist.genre, // mainCategory -> genre
       subCategory: latestPlaylist.subCategory,
-      categoryDisplayName: categoryDisplayNames[latestPlaylist.mainCategory] || latestPlaylist.mainCategory,
+      genreDisplayName: genreDisplayNames[latestPlaylist.genre] || latestPlaylist.genre,
       musicCount: latestPlaylist.musics?.length || 0,
       owner: {
         _id: latestPlaylist.userId._id,
@@ -162,25 +162,25 @@ exports.getHotPlaylistByCategory = async (req, res) => {
 // HOT istatistikleri
 exports.getHotStats = async (req, res) => {
   try {
-    const categories = ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'];
+    const genres = ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'];
     const stats = {};
 
-    for (const category of categories) {
+    for (const genre of genres) {
       const totalPlaylists = await Playlist.countDocuments({ 
-        mainCategory: category,
+        genre: genre, // mainCategory -> genre
         isAdminPlaylist: true,
         isPublic: true 
       });
 
       const latestPlaylist = await Playlist.findOne({ 
-        mainCategory: category,
+        genre: genre, // mainCategory -> genre
         isAdminPlaylist: true,
         isPublic: true 
       })
         .select('createdAt name subCategory')
         .sort({ createdAt: -1 });
 
-      stats[category] = {
+      stats[genre] = {
         totalPlaylists,
         latestPlaylist: latestPlaylist ? {
           name: latestPlaylist.name,

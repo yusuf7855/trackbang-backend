@@ -21,27 +21,20 @@ const playlistSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // Ana kategori (sadece admin playlist'leri için)
-  mainCategory: {
+  
+  // GENRE - Hem admin hem user playlist'ler için tek alan
+  genre: {
     type: String,
     enum: ['afrohouse', 'indiedance', 'organichouse', 'downtempo', 'melodichouse'],
-    required: function() { return this.isAdminPlaylist; }
+    required: true // Artık hem admin hem user için zorunlu
   },
+  
   // Alt kategori/Katalog numarası (sadece admin playlist'leri için - AH1, MH1, vb.)
   subCategory: {
     type: String,
     uppercase: true,
     trim: true,
     required: function() { return this.isAdminPlaylist; }
-  },
-  
-  // KULLANICI PLAYLIST ALANLARı
-  // Normal genre (sadece kullanıcı playlist'leri için)
-  genre: {
-    type: String,
-    enum: ['pop', 'rock', 'hiphop', 'jazz', 'classical', 'electronic', 'rnb', 'country', 'other'],
-    required: function() { return !this.isAdminPlaylist; },
-    default: 'other'
   },
   
   isPublic: {
@@ -72,9 +65,9 @@ playlistSchema.index({
   }
 });
 
-// Admin playlist'ler için main category ve sub category kombinasyonu unique olmalı
+// Admin playlist'ler için genre ve sub category kombinasyonu unique olmalı
 playlistSchema.index({ 
-  mainCategory: 1, 
+  genre: 1, 
   subCategory: 1 
 }, { 
   unique: true,
@@ -82,8 +75,6 @@ playlistSchema.index({
 });
 
 // Playlist türüne göre genre index
-playlistSchema.index({ genre: 1, isPublic: 1 }, { 
-  partialFilterExpression: { isAdminPlaylist: false }
-});
+playlistSchema.index({ genre: 1, isPublic: 1 });
 
 module.exports = mongoose.model('Playlist', playlistSchema);

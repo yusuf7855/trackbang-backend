@@ -4,12 +4,12 @@ const Music = require('../models/Music');
 // Admin panel için kategori playlist'i oluşturma - Authentication YOK
 exports.createAdminPlaylist = async (req, res) => {
   try {
-    const { name, description, mainCategory, subCategory, musicIds } = req.body;
+    const { name, description, genre, subCategory, musicIds } = req.body; // mainCategory -> genre
     
     // Admin playlist'ler için sabit admin user ID (opsiyonel)
     const adminUserId = '507f1f77bcf86cd799439011';
 
-    console.log('Creating admin playlist:', { name, mainCategory, subCategory, musicIds }); // Debug log
+    console.log('Creating admin playlist:', { name, genre, subCategory, musicIds }); // Debug log
 
     if (!name) {
       return res.status(400).json({ 
@@ -18,10 +18,10 @@ exports.createAdminPlaylist = async (req, res) => {
       });
     }
 
-    if (!mainCategory) {
+    if (!genre) {
       return res.status(400).json({ 
         success: false,
-        message: 'Main category is required' 
+        message: 'Genre is required' 
       });
     }
 
@@ -42,10 +42,10 @@ exports.createAdminPlaylist = async (req, res) => {
         });
       }
 
-      // Eklenen müziklerin kategorilerini ana kategori ile aynı yap
+      // Eklenen müziklerin kategorilerini genre ile aynı yap
       await Music.updateMany(
         { _id: { $in: musicIds } },
-        { category: mainCategory }
+        { category: genre }
       );
     }
 
@@ -53,7 +53,7 @@ exports.createAdminPlaylist = async (req, res) => {
       name,
       description: description || '',
       userId: adminUserId, // Sabit admin ID
-      mainCategory,
+      genre, // mainCategory -> genre
       subCategory: subCategory.toUpperCase(),
       musics: musicIds || [],
       isAdminPlaylist: true,
@@ -70,7 +70,7 @@ exports.createAdminPlaylist = async (req, res) => {
         _id: newPlaylist._id,
         name: newPlaylist.name,
         description: newPlaylist.description,
-        mainCategory: newPlaylist.mainCategory,
+        genre: newPlaylist.genre, // mainCategory -> genre
         subCategory: newPlaylist.subCategory,
         musicCount: newPlaylist.musics.length,
         createdAt: newPlaylist.createdAt
@@ -81,8 +81,8 @@ exports.createAdminPlaylist = async (req, res) => {
     if (err.code === 11000) {
       return res.status(400).json({ 
         success: false,
-        message: 'Bu kategori ve alt kategori kombinasyonu zaten mevcut',
-        error: 'Duplicate category combination' 
+        message: 'Bu genre ve alt kategori kombinasyonu zaten mevcut',
+        error: 'Duplicate genre combination' 
       });
     }
     res.status(500).json({ 
@@ -153,15 +153,15 @@ exports.createUserPlaylist = async (req, res) => {
   }
 };
 
-// Kategoriye göre admin playlist'leri getir (mobil app için)
+// Genre'ye göre admin playlist'leri getir (mobil app için)
 exports.getPlaylistsByCategory = async (req, res) => {
   try {
-    const { category } = req.params;
+    const { category } = req.params; // URL'den genre alınır
     const { page = 1, limit = 20 } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     const playlists = await Playlist.find({ 
-      mainCategory: category,
+      genre: category, // mainCategory -> genre
       isAdminPlaylist: true,
       isPublic: true 
     })
@@ -179,7 +179,7 @@ exports.getPlaylistsByCategory = async (req, res) => {
       .lean();
 
     const total = await Playlist.countDocuments({ 
-      mainCategory: category,
+      genre: category, // mainCategory -> genre
       isAdminPlaylist: true,
       isPublic: true 
     });
@@ -190,7 +190,7 @@ exports.getPlaylistsByCategory = async (req, res) => {
         _id: playlist._id,
         name: playlist.name,
         description: playlist.description || '',
-        mainCategory: playlist.mainCategory,
+        genre: playlist.genre, // mainCategory -> genre
         subCategory: playlist.subCategory,
         musicCount: playlist.musics?.length || 0,
         owner: {
@@ -280,7 +280,7 @@ exports.getAllAdminPlaylists = async (req, res) => {
     
     let filter = { isAdminPlaylist: true };
     if (category && category !== 'all') {
-      filter.mainCategory = category;
+      filter.genre = category; // mainCategory -> genre
     }
 
     const playlists = await Playlist.find(filter)
@@ -301,7 +301,7 @@ exports.getAllAdminPlaylists = async (req, res) => {
         _id: playlist._id,
         name: playlist.name,
         description: playlist.description || '',
-        mainCategory: playlist.mainCategory,
+        genre: playlist.genre, // mainCategory -> genre
         subCategory: playlist.subCategory,
         musicCount: playlist.musics?.length || 0,
         owner: {
@@ -363,10 +363,10 @@ exports.updateAdminPlaylist = async (req, res) => {
         });
       }
 
-      // Eklenen müziklerin kategorilerini ana kategori ile aynı yap
+      // Eklenen müziklerin kategorilerini genre ile aynı yap
       await Music.updateMany(
         { _id: { $in: musicIds } },
-        { category: playlist.mainCategory }
+        { category: playlist.genre } // mainCategory -> genre
       );
     }
 
@@ -386,7 +386,7 @@ exports.updateAdminPlaylist = async (req, res) => {
         _id: updatedPlaylist._id,
         name: updatedPlaylist.name,
         description: updatedPlaylist.description,
-        mainCategory: updatedPlaylist.mainCategory,
+        genre: updatedPlaylist.genre, // mainCategory -> genre
         subCategory: updatedPlaylist.subCategory,
         musicCount: updatedPlaylist.musics.length,
         createdAt: updatedPlaylist.createdAt
@@ -573,7 +573,7 @@ exports.getLatestPlaylistsByCategory = async (req, res) => {
 
     for (const category of categories) {
       const latestPlaylist = await Playlist.findOne({ 
-        mainCategory: category,
+        genre: category, // mainCategory -> genre
         isAdminPlaylist: true,
         isPublic: true 
       })
@@ -594,7 +594,7 @@ exports.getLatestPlaylistsByCategory = async (req, res) => {
           _id: latestPlaylist._id,
           name: latestPlaylist.name,
           description: latestPlaylist.description || '',
-          mainCategory: latestPlaylist.mainCategory,
+          genre: latestPlaylist.genre, // mainCategory -> genre
           subCategory: latestPlaylist.subCategory,
           musicCount: latestPlaylist.musics?.length || 0,
           owner: {
@@ -627,6 +627,84 @@ exports.getLatestPlaylistsByCategory = async (req, res) => {
     res.status(500).json({ 
       success: false,
       message: 'Error fetching latest playlists',
+      error: err.message 
+    });
+  }
+};
+exports.deletePlaylist = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('Deleting playlist:', id); // Debug log
+    
+    // Önce playlist'i bul ve türünü belirle
+    const playlist = await Playlist.findById(id);
+    
+    if (!playlist) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'Playlist not found' 
+      });
+    }
+
+    // Admin playlist ise
+    if (playlist.isAdminPlaylist) {
+      const deletedPlaylist = await Playlist.findOneAndDelete({ 
+        _id: id, 
+        isAdminPlaylist: true 
+      });
+      
+      if (!deletedPlaylist) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'Admin playlist not found' 
+        });
+      }
+
+      console.log('Admin playlist deleted successfully:', id); // Debug log
+
+      return res.json({
+        success: true,
+        message: 'Admin playlist deleted successfully'
+      });
+    } 
+    // User playlist ise - authentication kontrol et
+    else {
+      const userId = req.userId; // Authentication middleware'den gelir
+      
+      if (!userId) {
+        return res.status(401).json({ 
+          success: false,
+          message: 'Authentication required for user playlists' 
+        });
+      }
+
+      // Sadece kendi playlist'ini silebilir
+      const deletedPlaylist = await Playlist.findOneAndDelete({ 
+        _id: id, 
+        userId: userId,
+        isAdminPlaylist: false 
+      });
+      
+      if (!deletedPlaylist) {
+        return res.status(404).json({ 
+          success: false,
+          message: 'User playlist not found or unauthorized' 
+        });
+      }
+
+      console.log('User playlist deleted successfully:', id); // Debug log
+
+      return res.json({
+        success: true,
+        message: 'User playlist deleted successfully'
+      });
+    }
+  } catch (err) {
+    console.error('Error deleting playlist:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error deleting playlist',
       error: err.message 
     });
   }
