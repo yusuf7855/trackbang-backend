@@ -93,140 +93,6 @@ exports.createAdminPlaylist = async (req, res) => {
   }
 };
 
-// Kullanıcılar için normal playlist oluşturma (mobil app'ten) - Authentication ZORUNLU
-exports.createUserPlaylist = async (req, res) => {
-  try {
-    const { name, description, genre, isPublic, musicIds } = req.body;
-    const userId = req.userId; // Authentication middleware'den gelir
-
-    if (!userId) {
-      return res.status(401).json({ 
-        success: false,
-        message: 'Authentication required for user playlists' 
-      });
-    }
-
-    if (!name) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Playlist name is required' 
-      });
-    }
-
-    if (!genre) {
-      return res.status(400).json({ 
-        success: false,
-        message: 'Genre is required' 
-      });
-    }
-
-    const newPlaylist = new Playlist({
-      name,
-      description: description || '',
-      userId,
-      genre,
-      isPublic: isPublic || false,
-      musics: musicIds || [],
-      isAdminPlaylist: false
-    });
-
-    await newPlaylist.save();
-    
-    res.status(201).json({
-      success: true,
-      playlist: {
-        _id: newPlaylist._id,
-        name: newPlaylist.name,
-        genre: newPlaylist.genre,
-        isPublic: newPlaylist.isPublic,
-        musicCount: newPlaylist.musics.length,
-        createdAt: newPlaylist.createdAt
-      }
-    });
-  } catch (err) {
-    console.error('Error creating user playlist:', err);
-    res.status(400).json({ 
-      success: false,
-      message: 'Error creating user playlist',
-      error: err.message 
-    });
-  }
-};
-
-// Genre'ye göre admin playlist'leri getir (mobil app için)
-exports.getPlaylistsByCategory = async (req, res) => {
-  try {
-    const { category } = req.params; // URL'den genre alınır
-    const { page = 1, limit = 20 } = req.query;
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    const playlists = await Playlist.find({ 
-      genre: category, // mainCategory -> genre
-      isAdminPlaylist: true,
-      isPublic: true 
-    })
-      .populate({
-        path: 'musics',
-        select: 'title artist spotifyId category likes userLikes beatportUrl',
-      })
-      .populate({
-        path: 'userId',
-        select: 'username firstName lastName profileImage'
-      })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    const total = await Playlist.countDocuments({ 
-      genre: category, // mainCategory -> genre
-      isAdminPlaylist: true,
-      isPublic: true 
-    });
-
-    res.json({
-      success: true,
-      playlists: playlists.map(playlist => ({
-        _id: playlist._id,
-        name: playlist.name,
-        description: playlist.description || '',
-        genre: playlist.genre, // mainCategory -> genre
-        subCategory: playlist.subCategory,
-        musicCount: playlist.musics?.length || 0,
-        owner: {
-          _id: playlist.userId._id,
-          username: playlist.userId.username,
-          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`,
-          profileImage: playlist.userId.profileImage || null
-        },
-        musics: playlist.musics?.map(music => ({
-          _id: music._id,
-          title: music.title,
-          artist: music.artist,
-          spotifyId: music.spotifyId,
-          category: music.category,
-          likes: music.likes || 0,
-          userLikes: music.userLikes || [],
-          beatportUrl: music.beatportUrl || ''
-        })) || [],
-        createdAt: playlist.createdAt
-      })),
-      pagination: {
-        current: parseInt(page),
-        total: Math.ceil(total / parseInt(limit)),
-        hasMore: skip + playlists.length < total
-      }
-    });
-  } catch (err) {
-    console.error('Error fetching playlists by category:', err);
-    res.status(500).json({ 
-      success: false,
-      message: 'Error fetching playlists by category',
-      error: err.message 
-    });
-  }
-};
-
 // Kullanıcının playlist'lerini getir (sadece kullanıcı playlist'leri)
 exports.getUserPlaylists = async (req, res) => {
   try {
@@ -274,12 +140,12 @@ exports.getUserPlaylists = async (req, res) => {
 
 // Admin paneli için sadece admin playlist'leri getir
 exports.getAllAdminPlaylists = async (req, res) => {
-  try {
+   try {
     const { page = 1, limit = 20, category } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
     let filter = { isAdminPlaylist: true };
-    if (category && category !== 'all') {
+     if (category && category !== 'all') {
       filter.genre = category; // mainCategory -> genre
     }
 
@@ -327,14 +193,14 @@ exports.getAllAdminPlaylists = async (req, res) => {
         hasMore: skip + playlists.length < total
       }
     });
-  } catch (err) {
-    console.error('Error fetching admin playlists:', err);
-    res.status(500).json({ 
-      success: false,
-      message: 'Error fetching admin playlists',
+       } catch (err) {
+          console.error('Error fetching admin playlists:', err);
+           res.status(500).json({ 
+          success: false,
+        message: 'Error fetching admin playlists',
       error: err.message 
-    });
-  }
+     });
+    } 
 };
 
 // Admin playlist güncelleme - Authentication YOK
@@ -795,6 +661,444 @@ exports.getPlaylistsByCategory = async (req, res) => {
       success: false,
       message: 'Error fetching playlists by category',
       error: err.message 
+    });
+  }
+};
+
+// House tab için takip edilen kullanıcıların public playlist'leri
+exports.getFollowingUserPlaylists = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Önce kullanıcının takip ettiği kişileri bul
+    const User = require('../models/userModel'); // Model import edin
+    const currentUser = await User.findById(userId).select('following');
+    
+    if (!currentUser || !currentUser.following || currentUser.following.length === 0) {
+      return res.json({
+        success: true,
+        playlists: [],
+        pagination: {
+          current: parseInt(page),
+          total: 0,
+          hasMore: false
+        }
+      });
+    }
+
+    const playlists = await Playlist.find({ 
+      userId: { $in: currentUser.following },
+      isAdminPlaylist: false,
+      isPublic: true 
+    })
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+        options: { limit: 10 }
+      })
+      .populate({
+        path: 'userId',
+        select: 'username firstName lastName profileImage'
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Playlist.countDocuments({ 
+      userId: { $in: currentUser.following },
+      isAdminPlaylist: false,
+      isPublic: true 
+    });
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre,
+        musicCount: playlist.musics?.length || 0,
+        owner: {
+          _id: playlist.userId._id,
+          username: playlist.userId.username,
+          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`,
+          profileImage: playlist.userId.profileImage || null
+        },
+        musics: playlist.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: playlist.createdAt
+      })),
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        hasMore: skip + playlists.length < total
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching following user playlists:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching following user playlists',
+      error: err.message 
+    });
+  }
+};
+
+// Playlist arama
+exports.searchPlaylists = async (req, res) => {
+  try {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+      return res.status(400).json({ 
+        message: 'Search query must be at least 2 characters long' 
+      });
+    }
+
+    // Sadece public playlist'lerde ara
+    const playlists = await Playlist.find({
+      $text: { $search: query },
+      isPublic: true
+    })
+      .populate({
+        path: 'userId',
+        select: 'username firstName lastName'
+      })
+      .sort({ score: { $meta: "textScore" } })
+      .limit(20)
+      .lean();
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre,
+        isAdminPlaylist: playlist.isAdminPlaylist,
+        owner: playlist.userId ? {
+          username: playlist.userId.username,
+          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`
+        } : null,
+        createdAt: playlist.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Search error:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Server error during search',
+      error: err.message 
+    });
+  }
+};
+
+
+// Kullanıcılar için normal playlist oluşturma (mobil app'ten) - Authentication ZORUNLU
+exports.createUserPlaylist = async (req, res) => {
+  try {
+    const { name, description, genre, isPublic, musicId } = req.body; // musicId eklendi
+    const userId = req.userId; // Authentication middleware'den gelir
+
+    console.log('Creating user playlist:', { name, genre, isPublic, musicId, userId }); // Debug log
+
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required for user playlists' 
+      });
+    }
+
+    if (!name) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Playlist name is required' 
+      });
+    }
+
+    if (!genre) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Genre is required' 
+      });
+    }
+
+    // Müzik listesi hazırla
+    let musicIds = [];
+    if (musicId) {
+      // Tek müzik ID'si varsa array'e çevir
+      musicIds = [musicId];
+    }
+
+    // Müziklerin varlığını kontrol et
+    if (musicIds.length > 0) {
+      const Music = require('../models/Music');
+      const existingMusics = await Music.find({ _id: { $in: musicIds } });
+      if (existingMusics.length !== musicIds.length) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Some music tracks do not exist' 
+        });
+      }
+    }
+
+    const newPlaylist = new Playlist({
+      name,
+      description: description || '',
+      userId,
+      genre,
+      isPublic: isPublic || false,
+      musics: musicIds,
+      isAdminPlaylist: false
+    });
+
+    await newPlaylist.save();
+    
+    console.log('User playlist created successfully:', newPlaylist._id); // Debug log
+    
+    res.status(201).json({
+      success: true,
+      playlist: {
+        _id: newPlaylist._id,
+        name: newPlaylist.name,
+        genre: newPlaylist.genre,
+        isPublic: newPlaylist.isPublic,
+        musicCount: newPlaylist.musics.length,
+        createdAt: newPlaylist.createdAt
+      }
+    });
+  } catch (err) {
+    console.error('Error creating user playlist:', err);
+    res.status(400).json({ 
+      success: false,
+      message: 'Error creating user playlist',
+      error: err.message 
+    });
+  }
+};
+
+// Takip edilen kullanıcıların playlist'lerini getir - YENİ FONKSİYON
+exports.getFollowingPlaylists = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Kullanıcının takip ettiği kişileri bul
+    const User = require('../models/userModel');
+    const user = await User.findById(userId).populate('following', '_id');
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const followingIds = user.following.map(f => f._id);
+
+    // Takip edilen kullanıcıların public playlist'lerini getir
+    const playlists = await Playlist.find({
+      userId: { $in: followingIds },
+      isPublic: true,
+      isAdminPlaylist: false
+    })
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+        options: { limit: 10 }
+      })
+      .populate({
+        path: 'userId',
+        select: 'username firstName lastName profileImage'
+      })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre,
+        musicCount: playlist.musics?.length || 0,
+        owner: {
+          _id: playlist.userId._id,
+          username: playlist.userId.username,
+          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`,
+          profileImage: playlist.userId.profileImage || null
+        },
+        musics: playlist.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: playlist.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Error fetching following playlists:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching following playlists',
+      error: err.message
+    });
+  }
+};
+
+// Public World Playlists için yeni fonksiyon
+exports.getPublicWorldPlaylists = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Sadece user playlist'leri al (admin değil) ve public olanlar
+    const playlists = await Playlist.find({
+      isPublic: true,
+      isAdminPlaylist: false
+    })
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+        options: { limit: 10 }
+      })
+      .populate({
+        path: 'userId',
+        select: 'username firstName lastName profileImage'
+      })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Playlist.countDocuments({
+      isPublic: true,
+      isAdminPlaylist: false
+    });
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre,
+        musicCount: playlist.musics?.length || 0,
+        owner: {
+          _id: playlist.userId._id,
+          username: playlist.userId.username,
+          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`,
+          profileImage: playlist.userId.profileImage || null
+        },
+        musics: playlist.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: playlist.createdAt
+      })),
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        hasMore: skip + playlists.length < total
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching public world playlists:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching public world playlists',
+      error: err.message
+    });
+  }
+};
+
+// Private playlist arama - YENİ FONKSİYON
+exports.searchPrivatePlaylists = async (req, res) => {
+  try {
+    const { query, userId } = req.query;
+    const requestUserId = req.userId; // Auth middleware'den
+
+    if (!query || query.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query must be at least 2 characters long'
+      });
+    }
+
+    if (!userId || userId !== requestUserId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized to search private playlists'
+      });
+    }
+
+    const playlists = await Playlist.find({
+      userId: userId,
+      isAdminPlaylist: false,
+      isPublic: false,
+      $or: [
+        { name: { $regex: query, $options: 'i' } },
+        { description: { $regex: query, $options: 'i' } }
+      ]
+    })
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+      })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre,
+        isPublic: playlist.isPublic,
+        musicCount: playlist.musics?.length || 0,
+        musics: playlist.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: playlist.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('Error searching private playlists:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Error searching private playlists',
+      error: err.message
     });
   }
 };

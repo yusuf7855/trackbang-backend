@@ -13,29 +13,30 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-
-app.use(cors());
-app.use(express.json());
-app.use('/api', sampleRoutes);
-app.use('/api', authRoutes);
-app.use('/api/download', downloadRoutes);
-app.use('/api/music', musicRoutes);
-app.use('/api/playlists', playlistRoutes);
-app.use('/api/hot', hotRoutes);
-app.use('/assets', express.static('assets'));
-app.use('/uploads', express.static('uploads'));
-
+// ============ CRUCIAL MIDDLEWARE ADDITIONS ============
+app.use(cors()); // Enable CORS
+app.use(express.json()); // Parse JSON bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+// ======================================================
 
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.originalUrl}`);
+  console.log('Request Body:', req.body); // Add this to debug
   next();
 });
 
 // Static files
 app.use('/assets', express.static('assets'));
 app.use('/uploads', express.static('uploads'));
+
+// API Routes
+app.use('/api/download', downloadRoutes);
+app.use('/api', sampleRoutes);
+app.use('/api/music', musicRoutes);
+app.use('/api/playlists', playlistRoutes);
+app.use('/api/hot', hotRoutes);
+app.use('/api', authRoutes);
 
 // Database connection and server start
 async function startServer() {

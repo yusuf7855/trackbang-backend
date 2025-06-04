@@ -242,6 +242,7 @@ exports.register = async (req, res) => {
 };
 
 exports.login = async (req, res) => {
+  console.log('Request body:', req.body); 
   const { email, password } = req.body;
   const ip = req.ip;
 
