@@ -19,6 +19,8 @@ router.get('/public', playlistController.getPublicPlaylists);
 
 // Category routes (Mobil app için - admin playlist'leri)
 router.get('/category/:category', playlistController.getPlaylistsByCategory);
-router.get('/hot/latest', playlistController.getLatestPlaylistsByCategory); // HOT sayfası için
+
+// HOT sayfası için her kategoriden son admin playlist
+router.get('/hot/latest', playlistController.getLatestPlaylistsByCategory);
 
 module.exports = router;

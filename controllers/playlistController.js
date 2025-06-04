@@ -709,3 +709,92 @@ exports.deletePlaylist = async (req, res) => {
     });
   }
 };
+// Genre'ye göre admin playlist'leri getir (mobil app için)
+exports.getPlaylistsByCategory = async (req, res) => {
+  try {
+    const { category } = req.params; // URL'den genre alınır
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    console.log(`Fetching admin playlists for category: ${category}`); // Debug log
+
+    const playlists = await Playlist.find({ 
+      genre: category, // mainCategory -> genre
+      isAdminPlaylist: true,
+      isPublic: true 
+    })
+      .populate({
+        path: 'musics',
+        select: 'title artist spotifyId category likes userLikes beatportUrl',
+      })
+      .populate({
+        path: 'userId',
+        select: 'username firstName lastName profileImage'
+      })
+      .sort({ createdAt: -1 }) // En yeni önce
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Playlist.countDocuments({ 
+      genre: category, // mainCategory -> genre
+      isAdminPlaylist: true,
+      isPublic: true 
+    });
+
+    console.log(`Found ${playlists.length} admin playlists for category: ${category}`); // Debug log
+
+    // subCategory'ye göre sırala (AH1, AH2, vs.)
+    playlists.sort((a, b) => {
+      const aSubCat = a.subCategory || '';
+      const bSubCat = b.subCategory || '';
+      return aSubCat.localeCompare(bSubCat);
+    });
+
+    res.json({
+      success: true,
+      playlists: playlists.map(playlist => ({
+        _id: playlist._id,
+        name: playlist.name,
+        description: playlist.description || '',
+        genre: playlist.genre, // mainCategory -> genre
+        subCategory: playlist.subCategory,
+        musicCount: playlist.musics?.length || 0,
+        owner: playlist.userId ? {
+          _id: playlist.userId._id,
+          username: playlist.userId.username,
+          displayName: `${playlist.userId.firstName} ${playlist.userId.lastName}`,
+          profileImage: playlist.userId.profileImage || null
+        } : {
+          _id: 'admin',
+          username: 'admin',
+          displayName: 'Admin User',
+          profileImage: null
+        },
+        musics: playlist.musics?.map(music => ({
+          _id: music._id,
+          title: music.title,
+          artist: music.artist,
+          spotifyId: music.spotifyId,
+          category: music.category,
+          likes: music.likes || 0,
+          userLikes: music.userLikes || [],
+          beatportUrl: music.beatportUrl || ''
+        })) || [],
+        createdAt: playlist.createdAt
+      })),
+      pagination: {
+        current: parseInt(page),
+        total: Math.ceil(total / parseInt(limit)),
+        hasMore: skip + playlists.length < total
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching playlists by category:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error fetching playlists by category',
+      error: err.message 
+    });
+  }
+};

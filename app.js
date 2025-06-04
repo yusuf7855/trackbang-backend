@@ -14,25 +14,24 @@ dotenv.config();
 const app = express();
 
 // Middleware
-app.use(cors({
-  origin: 'http://localhost:5173', // Vite default port
-  credentials: true
-}));
+
+app.use(cors());
 app.use(express.json());
+app.use('/api', sampleRoutes);
+app.use('/api', authRoutes);
+app.use('/api/download', downloadRoutes);
+app.use('/api/music', musicRoutes);
+app.use('/api/playlists', playlistRoutes);
+app.use('/api/hot', hotRoutes);
+app.use('/assets', express.static('assets'));
+app.use('/uploads', express.static('uploads'));
+
 
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.originalUrl}`);
   next();
 });
-
-// Routes - sıralama önemli
-app.use('/api/samples', sampleRoutes);
-app.use('/api/download', downloadRoutes);
-app.use('/api/music', musicRoutes);
-app.use('/api/playlists', playlistRoutes); // Bu route'da admin için auth yok
-app.use('/api/hot', hotRoutes);
-app.use('/api/auth', authRoutes); // Auth route'ları en sonda
 
 // Static files
 app.use('/assets', express.static('assets'));
