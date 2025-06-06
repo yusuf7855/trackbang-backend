@@ -18,6 +18,7 @@ router.delete('/admin/:id', playlistController.deleteAdminPlaylist);
 
 // User playlist routes (Mobil app için) - Authentication gerekli
 router.post('/', authMiddleware, playlistController.createUserPlaylist); // Ana route
+router.put('/user/:id', authMiddleware, playlistController.updateUserPlaylist); // YENİ: User playlist güncelleme
 router.delete('/user/:id', authMiddleware, playlistController.deleteUserPlaylist);
 
 // HOT sayfası için routes

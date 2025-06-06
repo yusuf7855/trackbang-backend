@@ -8,14 +8,13 @@ exports.getHotPlaylists = async (req, res) => {
 
     for (const genre of genres) {
       const latestPlaylist = await Playlist.findOne({ 
-        genre: genre, // mainCategory -> genre
+        genre: genre,
         isAdminPlaylist: true,
         isPublic: true 
       })
         .populate({
           path: 'musics',
           select: 'title artist spotifyId category likes userLikes beatportUrl',
-          options: { limit: 10 } // İlk 10 şarkıyı al
         })
         .populate({
           path: 'userId',
@@ -29,14 +28,16 @@ exports.getHotPlaylists = async (req, res) => {
           _id: latestPlaylist._id,
           name: latestPlaylist.name,
           description: latestPlaylist.description || '',
-          genre: latestPlaylist.genre, // mainCategory -> genre
+          genre: latestPlaylist.genre,
           subCategory: latestPlaylist.subCategory,
           musicCount: latestPlaylist.musics?.length || 0,
           owner: {
-            _id: latestPlaylist.userId._id,
-            username: latestPlaylist.userId.username,
-            displayName: `${latestPlaylist.userId.firstName} ${latestPlaylist.userId.lastName}`,
-            profileImage: latestPlaylist.userId.profileImage || null
+            _id: latestPlaylist.userId?._id || 'admin',
+            username: latestPlaylist.userId?.username || 'admin',
+            displayName: latestPlaylist.userId ? 
+              `${latestPlaylist.userId.firstName} ${latestPlaylist.userId.lastName}` : 
+              'Admin User',
+            profileImage: latestPlaylist.userId?.profileImage || null
           },
           musics: latestPlaylist.musics?.map(music => ({
             _id: music._id,
@@ -49,6 +50,14 @@ exports.getHotPlaylists = async (req, res) => {
             beatportUrl: music.beatportUrl || ''
           })) || [],
           createdAt: latestPlaylist.createdAt
+        });
+      } else {
+        // Eğer bu genre için playlist yoksa boş bir entry ekle
+        hotPlaylists.push({
+          genre: genre,
+          name: null,
+          isEmpty: true,
+          musics: []
         });
       }
     }
@@ -82,13 +91,13 @@ exports.getHotPlaylists = async (req, res) => {
   }
 };
 
-// Genre'ye göre HOT playlist getir
-exports.getHotPlaylistByCategory = async (req, res) => {
+// Belirli bir genre'nin en son playlist'ini getir
+exports.getLatestPlaylistByGenre = async (req, res) => {
   try {
-    const { category } = req.params; // Bu aslında genre
+    const { genre } = req.params;
     
     const latestPlaylist = await Playlist.findOne({ 
-      genre: category, // mainCategory -> genre
+      genre: genre,
       isAdminPlaylist: true,
       isPublic: true 
     })
@@ -106,7 +115,7 @@ exports.getHotPlaylistByCategory = async (req, res) => {
     if (!latestPlaylist) {
       return res.status(404).json({
         success: false,
-        message: `${category} genre'sinde henüz admin playlist bulunamadı`
+        message: `${genre} genre'sinde henüz admin playlist bulunamadı`
       });
     }
 
@@ -122,15 +131,17 @@ exports.getHotPlaylistByCategory = async (req, res) => {
       _id: latestPlaylist._id,
       name: latestPlaylist.name,
       description: latestPlaylist.description || '',
-      genre: latestPlaylist.genre, // mainCategory -> genre
+      genre: latestPlaylist.genre,
       subCategory: latestPlaylist.subCategory,
       genreDisplayName: genreDisplayNames[latestPlaylist.genre] || latestPlaylist.genre,
       musicCount: latestPlaylist.musics?.length || 0,
       owner: {
-        _id: latestPlaylist.userId._id,
-        username: latestPlaylist.userId.username,
-        displayName: `${latestPlaylist.userId.firstName} ${latestPlaylist.userId.lastName}`,
-        profileImage: latestPlaylist.userId.profileImage || null
+        _id: latestPlaylist.userId?._id || 'admin',
+        username: latestPlaylist.userId?.username || 'admin',
+        displayName: latestPlaylist.userId ? 
+          `${latestPlaylist.userId.firstName} ${latestPlaylist.userId.lastName}` : 
+          'Admin User',
+        profileImage: latestPlaylist.userId?.profileImage || null
       },
       musics: latestPlaylist.musics?.map(music => ({
         _id: music._id,
@@ -147,8 +158,23 @@ exports.getHotPlaylistByCategory = async (req, res) => {
 
     res.json({
       success: true,
-      hotPlaylist: response
+      playlist: response
     });
+  } catch (err) {
+    console.error('Error fetching latest playlist by genre:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Latest playlist yüklenirken hata oluştu',
+      error: err.message 
+    });
+  }
+};
+
+// Genre'ye göre HOT playlist getir (eski fonksiyon - geriye uyumluluk için)
+exports.getHotPlaylistByCategory = async (req, res) => {
+  try {
+    const { category } = req.params;
+    return exports.getLatestPlaylistByGenre(req, res);
   } catch (err) {
     console.error('Error fetching hot playlist by category:', err);
     res.status(500).json({ 
@@ -167,13 +193,13 @@ exports.getHotStats = async (req, res) => {
 
     for (const genre of genres) {
       const totalPlaylists = await Playlist.countDocuments({ 
-        genre: genre, // mainCategory -> genre
+        genre: genre,
         isAdminPlaylist: true,
         isPublic: true 
       });
 
       const latestPlaylist = await Playlist.findOne({ 
-        genre: genre, // mainCategory -> genre
+        genre: genre,
         isAdminPlaylist: true,
         isPublic: true 
       })

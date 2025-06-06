@@ -1102,3 +1102,76 @@ exports.searchPrivatePlaylists = async (req, res) => {
     });
   }
 };
+exports.updateUserPlaylist = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description, musicIds } = req.body;
+    const userId = req.userId; // Authentication middleware'den gelir
+
+    console.log('Updating user playlist:', id, 'by user:', userId); // Debug log
+
+    if (!userId) {
+      return res.status(401).json({ 
+        success: false,
+        message: 'Authentication required' 
+      });
+    }
+
+    // Sadece kendi playlist'ini güncelleyebilir
+    const playlist = await Playlist.findOne({ 
+      _id: id, 
+      userId: userId,
+      isAdminPlaylist: false 
+    });
+
+    if (!playlist) {
+      return res.status(404).json({ 
+        success: false,
+        message: 'User playlist not found or unauthorized' 
+      });
+    }
+
+    // Müziklerin varlığını kontrol et
+    if (musicIds && musicIds.length > 0) {
+      const existingMusics = await Music.find({ _id: { $in: musicIds } });
+      if (existingMusics.length !== musicIds.length) {
+        return res.status(400).json({ 
+          success: false,
+          message: 'Some music tracks do not exist' 
+        });
+      }
+    }
+
+    const updatedPlaylist = await Playlist.findByIdAndUpdate(
+      id,
+      {
+        ...(name && { name }),
+        ...(description !== undefined && { description }),
+        ...(musicIds !== undefined && { musics: musicIds })
+      },
+      { new: true }
+    );
+
+    console.log('User playlist updated successfully:', id); // Debug log
+
+    res.json({
+      success: true,
+      playlist: {
+        _id: updatedPlaylist._id,
+        name: updatedPlaylist.name,
+        description: updatedPlaylist.description,
+        genre: updatedPlaylist.genre,
+        isPublic: updatedPlaylist.isPublic,
+        musicCount: updatedPlaylist.musics.length,
+        createdAt: updatedPlaylist.createdAt
+      }
+    });
+  } catch (err) {
+    console.error('Error updating user playlist:', err);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error updating user playlist',
+      error: err.message 
+    });
+  }
+};
