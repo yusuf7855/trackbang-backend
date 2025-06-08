@@ -8,6 +8,7 @@ const playlistRoutes = require('./routes/playlistRoutes');
 const downloadRoutes = require('./routes/downloadRoutes');
 const sampleRoutes = require('./routes/sampleRoutes');
 const hotRoutes = require('./routes/hotRoutes');
+const searchRoutes = require('./routes/searchRoutes'); // YENİ: Search routes
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ app.use('/api', sampleRoutes);
 app.use('/api/music', musicRoutes);
 app.use('/api/playlists', playlistRoutes);
 app.use('/api/hot', hotRoutes);
+app.use('/api/search', searchRoutes); 
 app.use('/api', authRoutes);
 
 // Database connection and server start
