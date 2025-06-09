@@ -10,7 +10,6 @@ router.get('/category/:category', musicController.getMusicByCategory);
 
 // Arama routes
 router.get('/search', musicController.searchMusic);
-router.get('/search-by-artist', musicController.searchByArtist); // YENİ: Sanatçıya göre arama
 router.get('/search-private', musicController.searchPrivateContent);
 router.get('/search-public', musicController.searchPublicContent);
 
