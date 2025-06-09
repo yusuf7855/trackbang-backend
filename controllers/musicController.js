@@ -413,32 +413,30 @@ exports.getMusicPlaylistInfo = async (req, res) => {
       });
     }
 
-    // Bu müziği içeren playlist'leri bul
-    const playlists = await Playlist.find({
+    // SADECE ADMIN PLAYLIST'LERDE ara
+    const adminPlaylists = await Playlist.find({
       musics: musicId,
-      $or: [
-        { isPublic: true },
-        { isAdminPlaylist: true }
-      ]
+      isAdminPlaylist: true,
+      isPublic: true
     })
-    .select('name category subCategory description _id isAdminPlaylist genre')
+    .select('name category genre subCategory description _id isAdminPlaylist')
     .lean();
 
-    if (playlists.length === 0) {
+    if (adminPlaylists.length === 0) {
       return res.status(404).json({
         success: false,
-        message: 'Bu müzik herhangi bir public playlist\'te bulunamadı'
+        message: 'Bu müzik herhangi bir admin playlist\'te bulunamadı. Müzik ID: ' + musicId
       });
     }
 
-    // İlk bulduğu playlist'i (genellikle admin playlist) döndür
-    const primaryPlaylist = playlists[0];
+    // İlk bulduğu admin playlist'i döndür
+    const primaryPlaylist = adminPlaylists[0];
     
     // Güncellenmiş kategori başlığı mapping'i
     const categoryTitles = {
       // Eski kategoriler (backward compatibility)
       'Vocal Trance': 'Vocal Trance',
-      'Uplifting': 'Uplifting',
+      'Uplifting': 'Uplifting', 
       'Techno': 'Techno',
       'Progressive': 'Progressive',
       'PsyTrance': 'PsyTrance',
@@ -457,6 +455,13 @@ exports.getMusicPlaylistInfo = async (req, res) => {
     const categoryField = primaryPlaylist.genre || primaryPlaylist.category;
     const categoryTitle = categoryTitles[categoryField] || categoryField;
 
+    console.log(`Music ${musicId} found in admin playlist:`, {
+      playlistId: primaryPlaylist._id,
+      playlistName: primaryPlaylist.name,
+      category: categoryField,
+      categoryTitle: categoryTitle
+    });
+
     res.json({
       success: true,
       playlist: {
@@ -464,7 +469,7 @@ exports.getMusicPlaylistInfo = async (req, res) => {
         category: categoryField, // CategoryPage'in beklediği alan
         categoryTitle: categoryTitle
       },
-      allPlaylists: playlists.map(playlist => ({
+      allAdminPlaylists: adminPlaylists.map(playlist => ({
         ...playlist,
         category: playlist.genre || playlist.category,
         categoryTitle: categoryTitles[playlist.genre || playlist.category] || (playlist.genre || playlist.category)
@@ -472,7 +477,7 @@ exports.getMusicPlaylistInfo = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Playlist bilgisi alma hatası:', error);
+    console.error('Admin playlist bilgisi alma hatası:', error);
     res.status(500).json({
       success: false,
       message: 'Playlist bilgisi alınırken hata oluştu'
