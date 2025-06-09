@@ -393,7 +393,6 @@ exports.searchMusicByArtist= async (req, res)  => {
   }
 }
 
-// Müziğin hangi playlist'te olduğunu bulma
 exports.getMusicPlaylistInfo = async (req, res) => {
   try {
     const { id: musicId } = req.params;
@@ -422,7 +421,7 @@ exports.getMusicPlaylistInfo = async (req, res) => {
         { isAdminPlaylist: true }
       ]
     })
-    .select('name category subCategory description _id isAdminPlaylist')
+    .select('name category subCategory description _id isAdminPlaylist genre')
     .lean();
 
     if (playlists.length === 0) {
@@ -435,24 +434,41 @@ exports.getMusicPlaylistInfo = async (req, res) => {
     // İlk bulduğu playlist'i (genellikle admin playlist) döndür
     const primaryPlaylist = playlists[0];
     
-    // Kategori başlığını belirle
+    // Güncellenmiş kategori başlığı mapping'i
     const categoryTitles = {
+      // Eski kategoriler (backward compatibility)
       'Vocal Trance': 'Vocal Trance',
       'Uplifting': 'Uplifting',
       'Techno': 'Techno',
       'Progressive': 'Progressive',
       'PsyTrance': 'PsyTrance',
       'bigroom': 'Bigroom',
-      'clubhits': 'Club Hits'
+      'clubhits': 'Club Hits',
+      
+      // Yeni kategoriler (ListelerScreen'den gelen)
+      'afrohouse': 'Afro House',
+      'indiedance': 'Indie Dance',
+      'organichouse': 'Organic House',
+      'downtempo': 'Down Tempo',
+      'melodichouse': 'Melodic House'
     };
+
+    // Kategori alanını belirle (yeni sistemde 'genre', eski sistemde 'category')
+    const categoryField = primaryPlaylist.genre || primaryPlaylist.category;
+    const categoryTitle = categoryTitles[categoryField] || categoryField;
 
     res.json({
       success: true,
       playlist: {
         ...primaryPlaylist,
-        categoryTitle: categoryTitles[primaryPlaylist.category] || primaryPlaylist.category
+        category: categoryField, // CategoryPage'in beklediği alan
+        categoryTitle: categoryTitle
       },
-      allPlaylists: playlists // Tüm playlist'leri de döndür
+      allPlaylists: playlists.map(playlist => ({
+        ...playlist,
+        category: playlist.genre || playlist.category,
+        categoryTitle: categoryTitles[playlist.genre || playlist.category] || (playlist.genre || playlist.category)
+      }))
     });
 
   } catch (error) {
