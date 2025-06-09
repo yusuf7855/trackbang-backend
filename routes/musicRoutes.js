@@ -21,5 +21,6 @@ router.delete('/:id', musicController.deleteMusic);
 // Interaction routes
 router.post('/:id/like', musicController.likeMusic);
 router.post('/:id/add-to-playlist', musicController.addToPlaylist);
-
+router.get('/search-by-artist', musicController.searchMusicByArtist);
+router.get('/:id/playlist-info', musicController.getMusicPlaylistInfo);
 module.exports = router;

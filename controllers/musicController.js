@@ -342,3 +342,124 @@ exports.getTop10ByCategory = async (req, res) => {
     });
   }
 };
+
+exports.searchMusicByArtist= async (req, res)  => {
+  try {
+    const { artist } = req.query;
+    
+    if (!artist || artist.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Sanatçı adı gerekli'
+      });
+    }
+
+    const searchTerm = artist.trim();
+    
+    // Çoklu sanatçı desteği ile arama
+    const musics = await Music.find({
+      $or: [
+        { artist: { $regex: searchTerm, $options: 'i' } }, // Backward compatibility
+        { artists: { $regex: searchTerm, $options: 'i' } } // Yeni çoklu sanatçı desteği
+      ]
+    })
+    .select('title artist artists category likes userLikes beatportUrl spotifyId')
+    .sort({ likes: -1 }) // En çok beğenilenden sırala
+    .limit(50) // Sanatçı araması için daha fazla sonuç
+    .lean();
+
+    // Sonuçları formatla
+    const formattedMusics = musics.map(music => ({
+      ...music,
+      likeCount: music.likes || 0,
+      // Display sanatçıları - yeni sistem varsa onu kullan, yoksa eski sistemi
+      displayArtists: music.artists && music.artists.length > 0 
+        ? music.artists.join(', ')
+        : music.artist || 'Unknown Artist'
+    }));
+
+    res.json({
+      success: true,
+      musics: formattedMusics,
+      count: formattedMusics.length
+    });
+
+  } catch (error) {
+    console.error('Sanatçı arama hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Sanatçı arama sırasında hata oluştu'
+    });
+  }
+}
+
+// Müziğin hangi playlist'te olduğunu bulma
+exports.getMusicPlaylistInfo = async (req, res) => {
+  try {
+    const { id: musicId } = req.params;
+    
+    if (!musicId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Müzik ID gerekli'
+      });
+    }
+
+    // Müziğin var olup olmadığını kontrol et
+    const music = await Music.findById(musicId).lean();
+    if (!music) {
+      return res.status(404).json({
+        success: false,
+        message: 'Müzik bulunamadı'
+      });
+    }
+
+    // Bu müziği içeren playlist'leri bul
+    const playlists = await Playlist.find({
+      musics: musicId,
+      $or: [
+        { isPublic: true },
+        { isAdminPlaylist: true }
+      ]
+    })
+    .select('name category subCategory description _id isAdminPlaylist')
+    .lean();
+
+    if (playlists.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bu müzik herhangi bir public playlist\'te bulunamadı'
+      });
+    }
+
+    // İlk bulduğu playlist'i (genellikle admin playlist) döndür
+    const primaryPlaylist = playlists[0];
+    
+    // Kategori başlığını belirle
+    const categoryTitles = {
+      'Vocal Trance': 'Vocal Trance',
+      'Uplifting': 'Uplifting',
+      'Techno': 'Techno',
+      'Progressive': 'Progressive',
+      'PsyTrance': 'PsyTrance',
+      'bigroom': 'Bigroom',
+      'clubhits': 'Club Hits'
+    };
+
+    res.json({
+      success: true,
+      playlist: {
+        ...primaryPlaylist,
+        categoryTitle: categoryTitles[primaryPlaylist.category] || primaryPlaylist.category
+      },
+      allPlaylists: playlists // Tüm playlist'leri de döndür
+    });
+
+  } catch (error) {
+    console.error('Playlist bilgisi alma hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Playlist bilgisi alınırken hata oluştu'
+    });
+  }
+}
