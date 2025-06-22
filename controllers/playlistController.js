@@ -1105,7 +1105,7 @@ exports.searchPrivatePlaylists = async (req, res) => {
 exports.updateUserPlaylist = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, musicIds } = req.body;
+    const { name, description, musicIds, isPublic } = req.body; // isPublic eklendi
     const userId = req.userId; // Authentication middleware'den gelir
 
     console.log('Updating user playlist:', id, 'by user:', userId); // Debug log
@@ -1142,13 +1142,16 @@ exports.updateUserPlaylist = async (req, res) => {
       }
     }
 
+    // Güncelleme objesi oluştur
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+    if (musicIds !== undefined) updateData.musics = musicIds;
+    if (isPublic !== undefined) updateData.isPublic = isPublic; // isPublic eklendi
+
     const updatedPlaylist = await Playlist.findByIdAndUpdate(
       id,
-      {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-        ...(musicIds !== undefined && { musics: musicIds })
-      },
+      updateData,
       { new: true }
     );
 
@@ -1161,7 +1164,7 @@ exports.updateUserPlaylist = async (req, res) => {
         name: updatedPlaylist.name,
         description: updatedPlaylist.description,
         genre: updatedPlaylist.genre,
-        isPublic: updatedPlaylist.isPublic,
+        isPublic: updatedPlaylist.isPublic, // isPublic eklendi
         musicCount: updatedPlaylist.musics.length,
         createdAt: updatedPlaylist.createdAt
       }
