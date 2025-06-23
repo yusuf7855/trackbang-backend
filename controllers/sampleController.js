@@ -345,39 +345,107 @@ exports.searchSamples = async (req, res) => {
 exports.generateDownloadToken = async (req, res) => {
   try {
     const { sampleId } = req.body;
+    console.log('Token generation request for sampleId:', sampleId);
+    
     const sample = await Sample.findById(sampleId);
     
     if (!sample) {
+      console.log('Sample not found:', sampleId);
       return res.status(404).json({ error: 'Sample bulunamadı' });
+    }
+
+    // Dosya yolu kontrolü
+    if (!sample.mainContentPath) {
+      console.log('Main content path not found for sample:', sampleId);
+      return res.status(404).json({ error: 'Dosya yolu bulunamadı' });
     }
 
     // Ücretli sample kontrolü (gerçek uygulamada ödeme kontrolü yapılacak)
     if (sample.paymentStatus === 'paid' && sample.price > 0) {
       // Burada ödeme kontrolü yapılabilir
-      // Örnek: kullanıcının bu sample'ı satın alıp almadığını kontrol et
+      console.log('Paid sample download requested:', sampleId);
     }
 
     const token = uuidv4();
     const newToken = new DownloadToken({ 
       token, 
       filePath: sample.mainContentPath,
-      fileName: sample.mainContentFileName,
+      fileName: sample.mainContentFileName || `sample_${sampleId}.zip`,
       sampleId: sample._id
     });
 
     await newToken.save();
+    console.log('Token created and saved:', token);
 
-    res.json({ 
-      downloadUrl: `${apiBaseUrl}/api/download/${token}`,
-      fileName: sample.mainContentFileName,
+    // DÜZELTME: Doğru port numarasını kullan
+    const baseUrl = process.env.REACT_APP_API_BASE_URL || 'http://192.168.1.106:5000';
+    
+    const response = {
+      token: token,
+      downloadUrl: `${baseUrl}/api/download/${token}`,
+      fileName: sample.mainContentFileName || `sample_${sampleId}.zip`,
       paymentStatus: sample.paymentStatus
-    });
+    };
+
+    console.log('Response to client:', response);
+    res.json(response);
+    
   } catch (error) {
     console.error('Generate download token error:', error);
     res.status(500).json({ error: error.message });
   }
 };
 
+// Download file using token - DÜZELTME
+exports.downloadFile = async (req, res) => {
+  try {
+    const token = req.params.token;
+    console.log('Download request for token:', token);
+    
+    const record = await DownloadToken.findOne({ token, used: false });
+
+    if (!record) {
+      console.log('Invalid or used token:', token);
+      return res.status(403).json({ error: 'Geçersiz veya kullanılmış indirme bağlantısı' });
+    }
+
+    console.log('Token record found:', record);
+    
+    // Dosya kontrolü
+    if (!fs.existsSync(record.filePath)) {
+      console.log('File not found at path:', record.filePath);
+      return res.status(404).json({ error: 'Dosya bulunamadı' });
+    }
+
+    // Download sayısını artır
+    if (record.sampleId) {
+      const sample = await Sample.findById(record.sampleId);
+      if (sample) {
+        await sample.incrementDownloads();
+        console.log('Download count incremented for sample:', record.sampleId);
+      }
+    }
+
+    // Token'ı kullanılmış olarak işaretle
+    record.used = true;
+    await record.save();
+    console.log('Token marked as used:', token);
+
+    // Dosyayı indir
+    console.log('Sending file:', record.filePath);
+    res.download(record.filePath, record.fileName, (err) => {
+      if (err) {
+        console.error('File download error:', err);
+      } else {
+        console.log('File sent successfully:', record.fileName);
+      }
+    });
+    
+  } catch (error) {
+    console.error('Download file error:', error);
+    res.status(500).json({ error: 'İndirme hatası: ' + error.message });
+  }
+};
 // Download file using token
 exports.downloadFile = async (req, res) => {
   try {
