@@ -10,7 +10,7 @@ const sampleSchema = new mongoose.Schema({
   genre: { 
     type: String, 
     required: true,
-    enum: ['House', 'Techno', 'Trap', 'Hip Hop', 'Pop', 'Rock', 'Electronic', 'Ambient', 'Drum & Bass', 'Future Bass', 'Lo-Fi', 'Jazz']
+    enum: ['Afro House', 'İndie Dance', 'Melodic House', 'Organic House', 'Down Tempo']
   },
   price: { 
     type: Number, 
