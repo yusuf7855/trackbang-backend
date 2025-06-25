@@ -1,4 +1,4 @@
-// models/DeviceToken.js
+// 1. models/DeviceToken.js dosyasını oluşturun:
 const mongoose = require('mongoose');
 
 const deviceTokenSchema = new mongoose.Schema({
@@ -41,7 +41,6 @@ const deviceTokenSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  // Bildirim ayarları
   notificationSettings: {
     enabled: {
       type: Boolean,
@@ -59,7 +58,6 @@ const deviceTokenSchema = new mongoose.Schema({
       type: Boolean,
       default: true
     },
-    // Bildirim türlerine göre ayarlar
     types: {
       general: { type: Boolean, default: true },
       music: { type: Boolean, default: true },
@@ -68,7 +66,6 @@ const deviceTokenSchema = new mongoose.Schema({
       promotion: { type: Boolean, default: true }
     }
   },
-  // Token'ın geçersiz olma bilgisi
   invalidatedAt: {
     type: Date,
     default: null
@@ -82,64 +79,108 @@ const deviceTokenSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index'ler
 deviceTokenSchema.index({ userId: 1 });
 deviceTokenSchema.index({ fcmToken: 1 }, { unique: true });
 deviceTokenSchema.index({ isActive: 1 });
 deviceTokenSchema.index({ platform: 1 });
 deviceTokenSchema.index({ lastActiveAt: -1 });
 
-// Her kullanıcı için cihaz sayısını sınırla (max 5 cihaz)
-deviceTokenSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    const deviceCount = await this.constructor.countDocuments({ 
-      userId: this.userId, 
-      isActive: true 
-    });
-    
-    if (deviceCount >= 5) {
-      // En eski cihazı deaktive et
-      await this.constructor.findOneAndUpdate(
-        { userId: this.userId, isActive: true },
-        { isActive: false, invalidatedAt: new Date(), invalidationReason: 'device_limit' },
-        { sort: { lastActiveAt: 1 } }
-      );
-    }
+module.exports = mongoose.model('DeviceToken', deviceTokenSchema);
+
+// ================================
+
+// 2. models/Notification.js dosyasını oluşturun:
+const mongoose = require('mongoose');
+
+const notificationSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 100
+  },
+  body: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 500
+  },
+  data: {
+    type: Object,
+    default: {}
+  },
+  targetUsers: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
+  targetUserIds: [String],
+  sentCount: {
+    type: Number,
+    default: 0
+  },
+  failedCount: {
+    type: Number,
+    default: 0
+  },
+  totalTargets: {
+    type: Number,
+    default: 0
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'sent', 'failed', 'partial'],
+    default: 'pending'
+  },
+  sentAt: {
+    type: Date,
+    default: null
+  },
+  createdBy: {
+    type: String,
+    default: 'admin'
+  },
+  actions: [{
+    action: String,
+    title: String,
+    url: String
+  }],
+  type: {
+    type: String,
+    enum: ['general', 'music', 'playlist', 'user', 'promotion'],
+    default: 'general'
+  },
+  imageUrl: String,
+  deepLink: String,
+  category: {
+    type: String,
+    default: 'default'
+  },
+  sound: {
+    type: String,
+    default: 'default'
+  },
+  badge: {
+    type: Number,
+    default: 1
   }
-  next();
+}, {
+  timestamps: true
 });
 
-// Statik methodlar
-deviceTokenSchema.statics.getActiveTokensForUser = function(userId) {
-  return this.find({ userId, isActive: true }).select('fcmToken platform notificationSettings');
-};
+notificationSchema.index({ createdAt: -1 });
+notificationSchema.index({ status: 1 });
+notificationSchema.index({ targetUsers: 1 });
+notificationSchema.index({ type: 1 });
 
-deviceTokenSchema.statics.getActiveTokensForUsers = function(userIds) {
-  return this.find({ 
-    userId: { $in: userIds }, 
-    isActive: true,
-    'notificationSettings.enabled': true
-  }).select('fcmToken platform userId notificationSettings');
-};
+notificationSchema.virtual('successRate').get(function() {
+  if (this.totalTargets === 0) return 0;
+  return Math.round((this.sentCount / this.totalTargets) * 100);
+});
 
-deviceTokenSchema.statics.getAllActiveTokens = function() {
-  return this.find({ 
-    isActive: true,
-    'notificationSettings.enabled': true
-  }).select('fcmToken platform userId notificationSettings');
-};
+notificationSchema.set('toJSON', { virtuals: true });
 
-// Instance methodlar
-deviceTokenSchema.methods.updateLastActive = function() {
-  this.lastActiveAt = new Date();
-  return this.save();
-};
+module.exports = mongoose.model('Notification', notificationSchema);
 
-deviceTokenSchema.methods.invalidate = function(reason = 'other') {
-  this.isActive = false;
-  this.invalidatedAt = new Date();
-  this.invalidationReason = reason;
-  return this.save();
-};
+// ================================
 
-module.exports = mongoose.model('DeviceToken', deviceTokenSchema);
+// 3. controllers/notificationController.js dosyasını güncelleyin:
