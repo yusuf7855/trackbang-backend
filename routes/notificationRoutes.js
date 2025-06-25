@@ -21,13 +21,13 @@ router.post('/deactivate-token', authMiddleware, notificationController.deactiva
 // ============ ADMIN PANEL ROUTES (Auth Gerekli veya IP bazlı güvenlik) ============
 
 // Push bildirim gönderme (Admin)
-router.post('/send', authMiddleware, notificationController.sendNotification);
+router.post('/send',  notificationController.sendNotification);
 
 // Bildirim geçmişini getirme (Admin)
-router.get('/history', authMiddleware, notificationController.getNotificationHistory);
+router.get('/history', notificationController.getNotificationHistory);
 
 // İstatistikleri getirme (Admin)
-router.get('/stats', authMiddleware, notificationController.getNotificationStats);
+router.get('/admin/stats', notificationController.getNotificationStats);
 
 // ============ PUBLIC ROUTES (Test için) ============
 
