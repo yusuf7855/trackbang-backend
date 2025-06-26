@@ -2,16 +2,152 @@
 const admin = require('firebase-admin');
 const Notification = require('../models/Notification');
 const DeviceToken = require('../models/DeviceToken');
-const User = require('../models/userModel'); 
-
-const admin = require('firebase-admin');
-const Notification = require('../models/Notification');
-const DeviceToken = require('../models/DeviceToken');
 const User = require('../models/userModel');
 
+
+const debugActiveDevices = async (req, res) => {
+  try {
+    console.log('🔍 Aktif cihazlar kontrol ediliyor...');
+    
+    const activeDevices = await DeviceToken.find({ isActive: true })
+      .populate('userId', 'username email')
+      .sort({ lastActiveAt: -1 });
+    
+    console.log(`📱 Toplam aktif cihaz: ${activeDevices.length}`);
+    
+    const deviceInfo = activeDevices.map(device => ({
+      id: device._id,
+      userId: device.userId?._id,
+      username: device.userId?.username,
+      platform: device.platform,
+      deviceModel: device.deviceModel,
+      fcmToken: device.fcmToken.substring(0, 30) + '...',
+      lastActive: device.lastActiveAt,
+      notificationEnabled: device.notificationSettings?.enabled
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        totalDevices: activeDevices.length,
+        devices: deviceInfo
+      }
+    });
+  } catch (error) {
+    console.error('Debug aktif cihazlar hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Debug bilgisi alınamadı'
+    });
+  }
+};
+
+// DEBUG: Test bildirimi gönder (belirli token'a)
+const sendTestNotification = async (req, res) => {
+  try {
+    const { fcmToken, title = 'Test Bildirimi', body = 'Bu bir test bildirimidir' } = req.body;
+    
+    if (!fcmToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'fcmToken gerekli'
+      });
+    }
+
+    console.log('🧪 Test bildirimi gönderiliyor...');
+    initializeFirebase();
+
+    const message = {
+      notification: {
+        title,
+        body
+      },
+      data: {
+        type: 'test',
+        timestamp: Date.now().toString()
+      },
+      android: {
+        notification: {
+          channelId: 'default',
+          priority: 'high'
+        }
+      },
+      token: fcmToken
+    };
+
+    const response = await admin.messaging().send(message);
+    console.log('✅ Test bildirimi gönderildi:', response);
+
+    res.json({
+      success: true,
+      message: 'Test bildirimi gönderildi',
+      data: {
+        messageId: response
+      }
+    });
+  } catch (error) {
+    console.error('Test bildirimi hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Test bildirimi gönderilemedi',
+      error: error.message
+    });
+  }
+};
+
+// DEBUG: FCM token validation
+const validateFCMToken = async (req, res) => {
+  try {
+    const { fcmToken } = req.body;
+    
+    if (!fcmToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'fcmToken gerekli'
+      });
+    }
+
+    initializeFirebase();
+
+    // Basit test mesajı gönderek token'ı validate et
+    try {
+      const message = {
+        data: {
+          test: 'validation'
+        },
+        token: fcmToken
+      };
+
+      await admin.messaging().send(message);
+      
+      res.json({
+        success: true,
+        message: 'FCM Token geçerli'
+      });
+    } catch (fcmError) {
+      res.json({
+        success: false,
+        message: 'FCM Token geçersiz',
+        error: fcmError.message
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Token validation hatası',
+      error: error.message
+    });
+  }
+};
 // Firebase Admin SDK initialization
 const initializeFirebase = () => {
   if (admin.apps.length === 0) {
+    // Environment variables kontrolü
+    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_PRIVATE_KEY) {
+      console.error('❌ Firebase environment variables eksik!');
+      throw new Error('Firebase yapılandırması tamamlanmamış');
+    }
+
     const serviceAccount = {
       type: "service_account",
       project_id: process.env.FIREBASE_PROJECT_ID,
@@ -25,6 +161,8 @@ const initializeFirebase = () => {
     };
 
     console.log('🔥 Firebase Admin SDK başlatılıyor...');
+    console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
+    
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
     });
@@ -100,10 +238,15 @@ const registerDeviceToken = async (req, res) => {
   }
 };
 
-// Push bildirim gönderme
+// Push bildirim gönderme - GERÇEK FCM GÖNDERİMİ
+// controllers/notificationController.js - sendMulticast yerine tek tek gönderim
+
+// Push bildirim gönderme - DÜZELTİLMİŞ VERSİYON
 const sendNotification = async (req, res) => {
   try {
     console.log('🚀 FCM Bildirim gönderimi başlıyor...');
+    
+    // Firebase'i başlat
     initializeFirebase();
 
     const {
@@ -120,6 +263,12 @@ const sendNotification = async (req, res) => {
       sound = 'default',
       badge = 1
     } = req.body;
+
+    console.log('✅ Bildirim başarıyla alındı:');
+    console.log(`    - Başlık: ${title}`);
+    console.log(`    - İçerik: ${body}`);
+    console.log(`    - Tür: ${type}`);
+    console.log(`    - Hedef Kullanıcı Sayısı: ${targetUsers.length + targetUserIds.length}`);
 
     if (!title || !body) {
       return res.status(400).json({
@@ -166,11 +315,14 @@ const sendNotification = async (req, res) => {
       }).populate('userId', 'username email');
     }
 
+    console.log(`🔍 Veritabanından ${deviceTokens.length} aktif cihaz bulundu`);
+
     if (deviceTokens.length === 0) {
       notification.status = 'failed';
       notification.totalTargets = 0;
       await notification.save();
 
+      console.log('❌ Aktif cihaz bulunamadı');
       return res.status(404).json({
         success: false,
         message: 'Bildirim almaya uygun aktif cihaz bulunamadı'
@@ -181,99 +333,124 @@ const sendNotification = async (req, res) => {
     notification.totalTargets = tokens.length;
 
     console.log(`🎯 ${tokens.length} cihaza bildirim gönderilecek`);
+    console.log('FCM Tokens:', tokens.map(t => t.substring(0, 20) + '...'));
 
-    // FCM mesaj hazırlama
-    const message = {
-      notification: {
-        title,
-        body,
-        ...(imageUrl && { imageUrl })
-      },
-      data: {
-        ...data,
-        notificationId: notification._id.toString(),
-        type,
-        timestamp: Date.now().toString(),
-        ...(deepLink && { deepLink }),
-        ...(actions.length > 0 && { actions: JSON.stringify(actions) })
-      },
-      android: {
-        notification: {
-          channelId: category,
-          priority: 'high',
-          defaultSound: sound === 'default',
-          defaultVibrateTimings: true,
-          clickAction: 'FLUTTER_NOTIFICATION_CLICK'
-        },
-        data: {
-          click_action: 'FLUTTER_NOTIFICATION_CLICK'
-        }
-      },
-      apns: {
-        payload: {
-          aps: {
-            alert: { title, body },
-            badge,
-            sound: sound === 'default' ? 'default' : `${sound}.caf`,
-            'content-available': 1
-          },
-          deepLink,
-          notificationType: type
-        },
-        headers: {
-          'apns-priority': '10',
-          'apns-push-type': 'alert'
-        }
-      },
-      tokens
-    };
+    // Data objesini string'e çevir (FCM gereksinimidir)
+    const stringifiedData = {};
+    Object.keys(data).forEach(key => {
+      stringifiedData[key] = typeof data[key] === 'string' ? data[key] : JSON.stringify(data[key]);
+    });
 
-    // FCM ile toplu gönderim
     console.log('📤 FCM mesajı gönderiliyor...');
-    const response = await admin.messaging().sendMulticast(message);
+    console.log('Mesaj içeriği:', {
+      title,
+      body,
+      tokenCount: tokens.length,
+      data: stringifiedData
+    });
 
-    console.log(`📊 FCM Response: ${response.successCount} başarılı, ${response.failureCount} başarısız`);
-
-    // Başarısız token'ları işle
+    // ✅ DÜZELTİLDİ: sendMulticast yerine tek tek gönderim
+    let successCount = 0;
+    let failureCount = 0;
     const invalidTokens = [];
-    if (response.failureCount > 0) {
-      response.responses.forEach((resp, idx) => {
-        if (!resp.success) {
-          console.log(`❌ FCM Hatası [${idx}]:`, resp.error?.code, resp.error?.message);
-          
-          // Geçersiz token'ları belirle
-          if (resp.error?.code === 'messaging/invalid-registration-token' ||
-              resp.error?.code === 'messaging/registration-token-not-registered') {
-            invalidTokens.push(tokens[idx]);
-          }
-        }
-      });
+    const failureReasons = [];
 
-      // Geçersiz token'ları deaktive et
-      if (invalidTokens.length > 0) {
-        await DeviceToken.updateMany(
-          { fcmToken: { $in: invalidTokens } },
-          { 
-            isActive: false, 
-            invalidatedAt: new Date(),
-            invalidationReason: 'token_expired'
-          }
-        );
-        console.log(`🗑️ ${invalidTokens.length} geçersiz token deaktive edildi`);
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      
+      try {
+        // Her token için ayrı mesaj hazırla
+        const message = {
+          notification: {
+            title,
+            body,
+            ...(imageUrl && { imageUrl })
+          },
+          data: {
+            ...stringifiedData,
+            notificationId: notification._id.toString(),
+            type,
+            timestamp: Date.now().toString(),
+            ...(deepLink && { deepLink }),
+            ...(actions.length > 0 && { actions: JSON.stringify(actions) })
+          },
+          android: {
+            notification: {
+              channelId: category,
+              priority: 'high',
+              defaultSound: sound === 'default',
+              defaultVibrateTimings: true,
+              clickAction: 'FLUTTER_NOTIFICATION_CLICK'
+            },
+            data: {
+              click_action: 'FLUTTER_NOTIFICATION_CLICK'
+            }
+          },
+          apns: {
+            payload: {
+              aps: {
+                alert: { title, body },
+                badge,
+                sound: sound === 'default' ? 'default' : `${sound}.caf`,
+                'content-available': 1
+              },
+              deepLink,
+              notificationType: type
+            },
+            headers: {
+              'apns-priority': '10',
+              'apns-push-type': 'alert'
+            }
+          },
+          token: token // Tek token
+        };
+
+        // ✅ DÜZELTİLDİ: send() metodu kullan
+        const response = await admin.messaging().send(message);
+        
+        successCount++;
+        console.log(`✅ Token ${i + 1}/${tokens.length} başarılı: ${token.substring(0, 20)}... | MessageId: ${response}`);
+        
+      } catch (error) {
+        failureCount++;
+        console.log(`❌ Token ${i + 1}/${tokens.length} başarısız: ${token.substring(0, 20)}... | Hata: ${error.message}`);
+        
+        // Geçersiz token'ları belirle
+        if (error.code === 'messaging/invalid-registration-token' ||
+            error.code === 'messaging/registration-token-not-registered') {
+          invalidTokens.push(token);
+        }
+        
+        failureReasons.push({
+          token: token.substring(0, 20) + '...',
+          error: error.message
+        });
       }
     }
 
-    // Notification kaydını güncelle
-    const sentCount = response.successCount;
-    const failedCount = response.failureCount;
+    console.log(`📊 FCM Sonuçları: ${successCount} başarılı, ${failureCount} başarısız`);
 
-    notification.sentCount = sentCount;
-    notification.failedCount = failedCount;
+    // Geçersiz token'ları deaktive et
+    if (invalidTokens.length > 0) {
+      await DeviceToken.updateMany(
+        { fcmToken: { $in: invalidTokens } },
+        { 
+          isActive: false, 
+          invalidatedAt: new Date(),
+          invalidationReason: 'token_expired'
+        }
+      );
+      console.log(`🗑️ ${invalidTokens.length} geçersiz token deaktive edildi`);
+    }
+
+    // Notification kaydını güncelle
+    notification.sentCount = successCount;
+    notification.failedCount = failureCount;
     notification.sentAt = new Date();
     
-    if (failedCount === 0) {
+    if (failureCount === 0) {
       notification.status = 'sent';
-    } else if (sentCount === 0) {
+    } else if (successCount === 0) {
       notification.status = 'failed';
     } else {
       notification.status = 'partial';
@@ -281,18 +458,20 @@ const sendNotification = async (req, res) => {
 
     await notification.save();
 
-    console.log(`✅ Bildirim gönderim tamamlandı: ${sentCount}/${tokens.length} başarılı`);
+    console.log(`✅ Bildirim gönderim tamamlandı: ${successCount}/${tokens.length} başarılı`);
 
+    // Detaylı response
     res.json({
       success: true,
       message: 'Bildirim gönderildi',
       data: {
         notificationId: notification._id,
-        sentCount,
-        failedCount,
+        sentCount: successCount,
+        failedCount: failureCount,
         totalTargets: tokens.length,
-        successRate: Math.round((sentCount / tokens.length) * 100),
-        invalidTokensCount: invalidTokens.length
+        successRate: Math.round((successCount / tokens.length) * 100),
+        invalidTokensCount: invalidTokens.length,
+        ...(failureReasons.length > 0 && { failureReasons })
       }
     });
 
@@ -301,7 +480,8 @@ const sendNotification = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Bildirim gönderilemedi',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
@@ -354,9 +534,8 @@ const getUserNotifications = async (req, res) => {
       $or: [
         { targetUsers: userId },
         { targetUserIds: userId },
-        { targetUsers: { $size: 0 }, targetUserIds: { $size: 0 } }
-      ],
-      status: { $in: ['sent', 'partial'] }
+        { targetUsers: { $size: 0 }, targetUserIds: { $size: 0 } } // Genel bildirimler
+      ]
     };
 
     if (type) filter.type = type;
@@ -365,7 +544,7 @@ const getUserNotifications = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .select('title body data type imageUrl deepLink actions createdAt');
+      .select('title body type imageUrl deepLink createdAt data');
 
     const total = await Notification.countDocuments(filter);
 
@@ -394,36 +573,17 @@ const getUserNotifications = async (req, res) => {
 const updateNotificationSettings = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { deviceId, settings } = req.body;
+    const settings = req.body;
 
-    const deviceToken = await DeviceToken.findOne({
-      userId,
-      deviceId,
-      isActive: true
-    });
-
-    if (!deviceToken) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cihaz bulunamadı'
-      });
-    }
-
-    deviceToken.notificationSettings = {
-      ...deviceToken.notificationSettings,
-      ...settings
-    };
-
-    await deviceToken.save();
+    await DeviceToken.updateMany(
+      { userId },
+      { notificationSettings: settings }
+    );
 
     res.json({
       success: true,
-      message: 'Bildirim ayarları güncellendi',
-      data: {
-        settings: deviceToken.notificationSettings
-      }
+      message: 'Bildirim ayarları güncellendi'
     });
-
   } catch (error) {
     console.error('Bildirim ayarları güncelleme hatası:', error);
     res.status(500).json({
@@ -436,16 +596,12 @@ const updateNotificationSettings = async (req, res) => {
 // Cihaz token'ını deaktive etme
 const deactivateDeviceToken = async (req, res) => {
   try {
+    const { fcmToken } = req.body;
     const userId = req.user.id;
-    const { deviceId } = req.body;
 
-    await DeviceToken.findOneAndUpdate(
-      { userId, deviceId },
-      { 
-        isActive: false,
-        invalidatedAt: new Date(),
-        invalidationReason: 'user_disabled'
-      }
+    await DeviceToken.updateOne(
+      { fcmToken, userId },
+      { isActive: false, invalidatedAt: new Date(), invalidationReason: 'user_disabled' }
     );
 
     res.json({
@@ -461,34 +617,36 @@ const deactivateDeviceToken = async (req, res) => {
   }
 };
 
-// İstatistikler
+// Bildirim istatistikleri
 const getNotificationStats = async (req, res) => {
   try {
-    const totalNotifications = await Notification.countDocuments();
-    const totalActiveDevices = await DeviceToken.countDocuments({ isActive: true });
-    const todayNotifications = await Notification.countDocuments({
-      createdAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) }
-    });
-
-    // Platform dağılımı
-    const platformStats = await DeviceToken.aggregate([
-      { $match: { isActive: true } },
-      { $group: { _id: '$platform', count: { $sum: 1 } } }
+    const stats = await Notification.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalNotifications: { $sum: 1 },
+          totalSent: { $sum: '$sentCount' },
+          totalFailed: { $sum: '$failedCount' },
+          avgSuccessRate: { $avg: { $divide: ['$sentCount', '$totalTargets'] } }
+        }
+      }
     ]);
 
-    // Bildirim türü dağılımı
-    const typeStats = await Notification.aggregate([
-      { $group: { _id: '$type', count: { $sum: 1 } } }
+    const deviceStats = await DeviceToken.aggregate([
+      {
+        $group: {
+          _id: '$platform',
+          count: { $sum: 1 },
+          active: { $sum: { $cond: ['$isActive', 1, 0] } }
+        }
+      }
     ]);
 
     res.json({
       success: true,
       data: {
-        totalNotifications,
-        totalActiveDevices,
-        todayNotifications,
-        platformDistribution: platformStats,
-        typeDistribution: typeStats
+        notifications: stats[0] || {},
+        devices: deviceStats
       }
     });
   } catch (error) {
@@ -500,10 +658,10 @@ const getNotificationStats = async (req, res) => {
   }
 };
 
-
-
-
 module.exports = {
+  debugActiveDevices,
+  sendTestNotification,
+  validateFCMToken,
   registerDeviceToken,
   sendNotification,
   getNotificationHistory,
@@ -511,5 +669,4 @@ module.exports = {
   updateNotificationSettings,
   deactivateDeviceToken,
   getNotificationStats
-
 };
