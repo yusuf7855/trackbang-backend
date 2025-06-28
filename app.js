@@ -120,11 +120,9 @@ process.on('SIGINT', async () => {
   }
 });
 
-// ============ SERVER BAŞLATMA ============
-
 async function startServer() {
   try {
-    // 1. MongoDB'ye bağlan
+
     await connectToMongoDB();
     
     // 2. Server'ı başlat
