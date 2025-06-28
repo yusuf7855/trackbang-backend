@@ -6,49 +6,65 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Multer configuration for image uploads
+
+const uploadDir = path.join(__dirname, '../uploads/store-listings');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('✅ Store listings upload directory created:', uploadDir);
+}
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    const uploadDir = 'uploads/store-listings';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, 'listing-' + uniqueSuffix + path.extname(file.originalname));
+    const extension = path.extname(file.originalname).toLowerCase();
+    cb(null, 'listing-' + uniqueSuffix + extension);
   }
 });
+
 
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB limit
     files: 5 // Maximum 5 files
   },
   fileFilter: (req, file, cb) => {
+    console.log('📁 File filter check:', {
+      fieldname: file.fieldname,
+      originalname: file.originalname,
+      mimetype: file.mimetype
+    });
+
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
     
     if (mimetype && extname) {
+      console.log('✅ File accepted:', file.originalname);
       return cb(null, true);
     } else {
-      cb(new Error('Only image files are allowed'));
+      console.log('❌ File rejected:', file.originalname, 'Type:', file.mimetype);
+      cb(new Error('Sadece resim dosyaları kabul edilir (JPEG, JPG, PNG, GIF, WEBP)'));
     }
   }
-}).array('images', 5);
-
+});
 // ============ MOBIL APP ENDPOINTS ============
 
 // Get all active listings
 exports.getAllListings = async (req, res) => {
+  console.log('🏪 getAllListings çağrıldı');
+  
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
     
+    console.log(`📄 Sayfa: ${page}, Limit: ${limit}`);
+    
+    // Aktif ilanları getir
     const listings = await StoreListing.find({
       status: 'active',
       isActive: true,
@@ -59,20 +75,25 @@ exports.getAllListings = async (req, res) => {
     .skip(skip)
     .limit(limit);
     
+    console.log(`📊 Bulunan ilan sayısı: ${listings.length}`);
+    
     const total = await StoreListing.countDocuments({
       status: 'active',
       isActive: true,
       expiryDate: { $gt: new Date() }
     });
     
-    res.json({
+    console.log(`📈 Toplam ilan sayısı: ${total}`);
+    
+    // Response formatını kontrol et
+    const response = {
       success: true,
       listings: listings.map(listing => ({
         ...listing.toJSON(),
-        images: listing.images.map(img => ({
+        images: listing.images ? listing.images.map(img => ({
           ...img,
           url: `/uploads/store-listings/${img.filename}`
-        }))
+        })) : []
       })),
       pagination: {
         currentPage: page,
@@ -81,15 +102,22 @@ exports.getAllListings = async (req, res) => {
         hasNext: page < Math.ceil(total / limit),
         hasPrev: page > 1
       }
-    });
+    };
+    
+    console.log('✅ Response gönderiliyor');
+    res.json(response);
+    
   } catch (error) {
+    console.error('❌ getAllListings hatası:', error);
     res.status(500).json({
       success: false,
       message: 'Error fetching listings',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };
+
+        
 
 // Get listings by category
 exports.getListingsByCategory = async (req, res) => {
@@ -286,8 +314,16 @@ exports.getUserListings = async (req, res) => {
 
 // Create new listing
 exports.createListing = async (req, res) => {
-  upload(req, res, async (err) => {
+  console.log('🏪 createListing çağrıldı');
+  console.log('📋 Request body:', req.body);
+  console.log('📁 Files:', req.files ? req.files.length : 0);
+
+  // Multer middleware'i manuel çağır
+  const uploadMiddleware = upload.array('images', 5);
+  
+  uploadMiddleware(req, res, async (err) => {
     if (err) {
+      console.error('❌ Multer error:', err);
       return res.status(400).json({
         success: false,
         message: 'File upload error',
@@ -296,77 +332,235 @@ exports.createListing = async (req, res) => {
     }
     
     try {
-      const userId = req.userId;
+      const userId = req.userId || req.user.id;
+      console.log('👤 User ID:', userId);
+      
       const { title, category, price, description, phoneNumber } = req.body;
       
-      // Check if user has available listing rights
-      const userRights = await ListingRights.getUserRights(userId);
-      
-      if (!userRights.hasAvailableRights()) {
-        return res.status(403).json({
+      // Validation
+      if (!title || !category || !price || !description || !phoneNumber) {
+        return res.status(400).json({
           success: false,
-          message: 'Insufficient listing rights. Please purchase listing rights first.',
-          availableRights: userRights.availableRights
+          message: 'Tüm alanlar gereklidir',
+          missing: {
+            title: !title,
+            category: !category,
+            price: !price,
+            description: !description,
+            phoneNumber: !phoneNumber
+          }
         });
+      }
+
+      // Check if user has available listing rights (optional for now)
+      try {
+        const userRights = await ListingRights.findOne({ userId });
+        if (userRights && userRights.availableRights <= 0) {
+          return res.status(403).json({
+            success: false,
+            message: 'İlan hakkınız bulunmuyor. Lütfen ilan hakkı satın alın.',
+            availableRights: 0
+          });
+        }
+      } catch (rightsError) {
+        console.log('⚠️ Rights check failed, continuing...', rightsError.message);
+        // Continue without rights check for now
       }
       
       // Prepare images array
-      const images = req.files ? req.files.map(file => ({
-        filename: file.filename,
-        originalName: file.originalname
-      })) : [];
+      const images = req.files ? req.files.map(file => {
+        console.log('📸 Processing image:', file.filename);
+        return {
+          filename: file.filename,
+          originalName: file.originalname,
+          size: file.size,
+          mimetype: file.mimetype
+        };
+      }) : [];
       
-      // Create listing
-      const listing = new StoreListing({
+      console.log('📋 Creating listing with data:', {
         userId,
         title,
         category,
         price: parseFloat(price),
         description,
         phoneNumber,
+        imagesCount: images.length
+      });
+      
+      // Create listing
+      const listing = new StoreListing({
+        userId,
+        title: title.trim(),
+        category,
+        price: parseFloat(price),
+        description: description.trim(),
+        phoneNumber: phoneNumber.trim(),
         images,
         expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        paymentStatus: 'paid', // Auto-paid since user has rights
+        paymentStatus: 'paid', // Auto-paid for now
         status: 'active',
-        isActive: true
+        isActive: true,
+        listingNumber: generateListingNumber(),
+        contactCount: 0,
+        viewCount: 0
       });
       
       await listing.save();
+      console.log('✅ Listing created with ID:', listing._id);
       
-      // Use one listing right
-      await userRights.useRight(listing._id, 'create_listing');
+      // Use one listing right (if exists)
+      try {
+        const userRights = await ListingRights.findOne({ userId });
+        if (userRights && userRights.availableRights > 0) {
+          userRights.availableRights -= 1;
+          userRights.usedRights.push({
+            listingId: listing._id,
+            usedAt: new Date(),
+            action: 'create_listing'
+          });
+          await userRights.save();
+          console.log('✅ Listing right used. Remaining:', userRights.availableRights);
+        }
+      } catch (rightsError) {
+        console.log('⚠️ Rights update failed:', rightsError.message);
+        // Continue anyway
+      }
       
       res.status(201).json({
         success: true,
-        message: 'Listing created successfully',
+        message: 'İlan başarıyla oluşturuldu!',
         listing: {
           ...listing.toJSON(),
           images: listing.images.map(img => ({
             ...img,
             url: `/uploads/store-listings/${img.filename}`
           }))
-        },
-        remainingRights: userRights.availableRights - 1
+        }
       });
+
     } catch (error) {
+      console.error('❌ Error creating listing:', error);
+      
       // Clean up uploaded files if listing creation fails
       if (req.files) {
         req.files.forEach(file => {
-          if (fs.existsSync(file.path)) {
-            fs.unlinkSync(file.path);
+          try {
+            if (fs.existsSync(file.path)) {
+              fs.unlinkSync(file.path);
+              console.log('🗑️ Cleaned up file:', file.filename);
+            }
+          } catch (cleanupError) {
+            console.error('❌ File cleanup error:', cleanupError);
           }
         });
       }
       
       res.status(500).json({
         success: false,
-        message: 'Error creating listing',
-        error: error.message
+        message: 'İlan oluşturulurken hata oluştu',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
       });
     }
   });
 };
+function generateListingNumber() {
+  const timestamp = Date.now().toString().slice(-6);
+  const random = Math.random().toString(36).substr(2, 4).toUpperCase();
+  return `IL${timestamp}${random}`;
+}
 
+// Get user's listing rights
+exports.getUserRights = async (req, res) => {
+  try {
+    const userId = req.userId || req.user.id;
+    
+    let userRights = await ListingRights.findOne({ userId });
+    
+    if (!userRights) {
+      // Create default rights if not exists
+      userRights = new ListingRights({
+        userId,
+        availableRights: 1, // Give 1 free right for testing
+        totalPurchased: 1,
+        usedRights: []
+      });
+      await userRights.save();
+    }
+    
+    res.json({
+      success: true,
+      credits: userRights.availableRights,
+      totalPurchased: userRights.totalPurchased,
+      usedCount: userRights.usedRights.length
+    });
+  } catch (error) {
+    console.error('❌ Get user rights error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching user rights',
+      error: error.message
+    });
+  }
+};
+
+// Test endpoint
+exports.testConnection = async (req, res) => {
+  console.log('🧪 Test connection çağrıldı');
+  
+  try {
+    // Database bağlantısını test et
+    const mongoose = require('mongoose');
+    const isConnected = mongoose.connection.readyState === 1;
+    
+    // Sample data oluştur (test için)
+    if (req.query.createSample === 'true') {
+      const sampleListing = new StoreListing({
+        title: 'Test İlan',
+        description: 'Bu bir test ilanıdır',
+        category: 'Elektronik',
+        price: 100,
+        userId: new mongoose.Types.ObjectId(), // Dummy user ID
+        phoneNumber: '05555555555',
+        status: 'active',
+        isActive: true,
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 gün sonra
+        images: [],
+        listingNumber: generateListingNumber()
+      });
+      
+      await sampleListing.save();
+      console.log('📝 Sample ilan oluşturuldu');
+    }
+    
+    const listingCount = await StoreListing.countDocuments();
+    
+    res.json({
+      success: true,
+      message: 'Store service is working',
+      database: {
+        connected: isConnected,
+        listingCount: listingCount
+      },
+      uploadDir: uploadDir,
+      timestamp: new Date().toISOString(),
+      endpoints: {
+        getAllListings: '/api/store/listings',
+        createListing: '/api/store/listings (POST)',
+        getCategories: '/api/store/categories',
+        testConnection: '/api/store/test'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Test connection hatası:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Test failed',
+      error: error.message
+    });
+  }
+};
 // Update listing
 exports.updateListing = async (req, res) => {
   try {

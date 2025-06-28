@@ -1,4 +1,5 @@
-// models/StoreListing.js
+// models/StoreListing.js - DÜZELTILMIŞ KATEGORILER
+
 const mongoose = require('mongoose');
 
 const storeListingSchema = new mongoose.Schema({
@@ -15,28 +16,21 @@ const storeListingSchema = new mongoose.Schema({
   title: {
     type: String,
     required: true,
-    maxlength: 200
+    maxlength: 200,
+    trim: true
   },
   category: {
     type: String,
     required: true,
     enum: [
-      'sound_cards',
-      'monitors', 
-      'midi_keyboards',
-      'recording_sets',
-      'production_computers',
-      'dj_equipment',
-      'production_control_devices',
-      'gaming_podcast_equipment',
-      'microphones',
-      'headphones',
-      'studio_dj_accessories',
-      'cables',
-      'interfaces',
-      'recording_devices',
-      'pre_amplifiers_effects',
-      'software'
+      'Elektronik',
+      'Giyim', 
+      'Ev & Yaşam',
+      'Spor',
+      'Kitap',
+      'Oyun',
+      'Müzik Aleti',
+      'Diğer'
     ]
   },
   price: {
@@ -46,16 +40,18 @@ const storeListingSchema = new mongoose.Schema({
   },
   currency: {
     type: String,
-    default: 'EUR'
+    default: 'TL'
   },
   description: {
     type: String,
     required: true,
-    maxlength: 2000
+    maxlength: 2000,
+    trim: true
   },
   phoneNumber: {
     type: String,
-    required: true
+    required: true,
+    trim: true
   },
   images: [{
     filename: {
@@ -63,6 +59,8 @@ const storeListingSchema = new mongoose.Schema({
       required: true
     },
     originalName: String,
+    size: Number,
+    mimetype: String,
     uploadDate: {
       type: Date,
       default: Date.now
@@ -70,7 +68,7 @@ const storeListingSchema = new mongoose.Schema({
   }],
   status: {
     type: String,
-    enum: ['active', 'inactive', 'expired', 'sold'],
+    enum: ['active', 'inactive', 'expired', 'sold', 'pending'],
     default: 'active'
   },
   isActive: {
@@ -80,11 +78,14 @@ const storeListingSchema = new mongoose.Schema({
   paymentStatus: {
     type: String,
     enum: ['paid', 'unpaid', 'expired'],
-    default: 'unpaid'
+    default: 'paid' // Default to paid for testing
   },
   expiryDate: {
     type: Date,
-    required: true
+    required: true,
+    default: function() {
+      return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
+    }
   },
   createdAt: {
     type: Date,
@@ -94,17 +95,13 @@ const storeListingSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
-  views: {
+  viewCount: {
     type: Number,
     default: 0
   },
   contactCount: {
     type: Number,
     default: 0
-  },
-  listingRights: {
-    type: Number,
-    default: 0 // Kullanıcının ilan hakkı sayısı
   }
 }, { 
   timestamps: true,
@@ -112,22 +109,20 @@ const storeListingSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Ilan numarası otomatik oluşturma
-storeListingSchema.pre('save', async function(next) {
+// Pre-save middleware
+storeListingSchema.pre('save', function(next) {
+  // Generate listing number if not exists
   if (!this.listingNumber) {
-    const count = await this.constructor.countDocuments();
-    this.listingNumber = `SL${(count + 1).toString().padStart(6, '0')}`;
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.random().toString(36).substr(2, 4).toUpperCase();
+    this.listingNumber = `IL${timestamp}${random}`;
   }
   
-  // Ödeme yapılmışsa aktivasyon tarihi güncelle
-  if (this.paymentStatus === 'paid' && this.status === 'inactive') {
-    this.status = 'active';
-    this.isActive = true;
-    this.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 gün
-  }
+  // Update timestamps
+  this.updatedAt = new Date();
   
-  // Süre dolmuş mu kontrol et
-  if (this.expiryDate < new Date() && this.status === 'active') {
+  // Check if expired
+  if (this.expiryDate < new Date()) {
     this.status = 'expired';
     this.isActive = false;
   }
@@ -135,74 +130,92 @@ storeListingSchema.pre('save', async function(next) {
   next();
 });
 
-// Virtual - Kategori display name
-storeListingSchema.virtual('categoryDisplayName').get(function() {
-  const categoryNames = {
-    'sound_cards': 'Ses Kartları',
-    'monitors': 'Monitörler',
-    'midi_keyboards': 'MIDI Klavyeler',
-    'recording_sets': 'Kayıt Setleri',
-    'production_computers': 'Prodüksiyon Bilgisayarları',
-    'dj_equipment': 'DJ Ekipmanları',
-    'production_control_devices': 'Prodüksiyon Kontrol Cihazları',
-    'gaming_podcast_equipment': 'Gaming ve Podcast Ekipmanları',
-    'microphones': 'Mikrofonlar',
-    'headphones': 'Kulaklıklar',
-    'studio_dj_accessories': 'Studio / DJ Aksesuarları',
-    'cables': 'Kablolar',
-    'interfaces': 'Arabirimler',
-    'recording_devices': 'Kayıt Cihazları',
-    'pre_amplifiers_effects': 'Pre-Amifler / Efektler',
-    'software': 'Yazılımlar'
-  };
-  return categoryNames[this.category] || this.category;
-});
-
-// Virtual - Kalan gün sayısı
+// Virtual for remaining days
 storeListingSchema.virtual('remainingDays').get(function() {
-  const now = new Date();
-  const expiry = new Date(this.expiryDate);
-  const diffTime = expiry - now;
+  if (!this.expiryDate) return 0;
+  const diffTime = this.expiryDate - new Date();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays > 0 ? diffDays : 0;
 });
 
+// Virtual for image URLs
+storeListingSchema.virtual('imageUrls').get(function() {
+  return this.images.map(img => `/uploads/store-listings/${img.filename}`);
+});
+
 // Static methods
+storeListingSchema.statics.getActiveListings = function(options = {}) {
+  const query = {
+    status: 'active',
+    isActive: true,
+    expiryDate: { $gt: new Date() }
+  };
+  
+  if (options.category && options.category !== 'Tümü') {
+    query.category = options.category;
+  }
+  
+  if (options.priceMin || options.priceMax) {
+    query.price = {};
+    if (options.priceMin) query.price.$gte = options.priceMin;
+    if (options.priceMax) query.price.$lte = options.priceMax;
+  }
+  
+  let queryBuilder = this.find(query).populate('userId', 'username firstName lastName');
+  
+  // Sorting
+  switch (options.sort) {
+    case 'price_asc':
+      queryBuilder = queryBuilder.sort({ price: 1 });
+      break;
+    case 'price_desc':
+      queryBuilder = queryBuilder.sort({ price: -1 });
+      break;
+    case 'date_asc':
+      queryBuilder = queryBuilder.sort({ createdAt: 1 });
+      break;
+    default:
+      queryBuilder = queryBuilder.sort({ createdAt: -1 });
+  }
+  
+  return queryBuilder;
+};
+
+storeListingSchema.statics.searchListings = function(searchQuery, options = {}) {
+  const query = {
+    $and: [
+      { status: 'active' },
+      { isActive: true },
+      { expiryDate: { $gt: new Date() } },
+      {
+        $or: [
+          { title: { $regex: searchQuery, $options: 'i' } },
+          { description: { $regex: searchQuery, $options: 'i' } },
+          { listingNumber: { $regex: searchQuery, $options: 'i' } }
+        ]
+      }
+    ]
+  };
+  
+  if (options.category && options.category !== 'Tümü') {
+    query.$and.push({ category: options.category });
+  }
+  
+  return this.find(query).populate('userId', 'username firstName lastName').sort({ createdAt: -1 });
+};
+
 storeListingSchema.statics.getByCategory = function(category) {
   return this.find({ 
     category: category, 
     status: 'active',
-    isActive: true 
-  }).sort({ createdAt: -1 });
-};
-
-storeListingSchema.statics.getActiveListings = function() {
-  return this.find({ 
-    status: 'active',
     isActive: true,
     expiryDate: { $gt: new Date() }
-  }).sort({ createdAt: -1 });
-};
-
-storeListingSchema.statics.searchListings = function(query) {
-  return this.find({
-    $and: [
-      { status: 'active' },
-      { isActive: true },
-      {
-        $or: [
-          { title: { $regex: query, $options: 'i' } },
-          { description: { $regex: query, $options: 'i' } },
-          { listingNumber: { $regex: query, $options: 'i' } }
-        ]
-      }
-    ]
-  }).sort({ createdAt: -1 });
+  }).populate('userId', 'username firstName lastName').sort({ createdAt: -1 });
 };
 
 // Instance methods
 storeListingSchema.methods.incrementViews = function() {
-  this.views += 1;
+  this.viewCount += 1;
   return this.save();
 };
 
@@ -215,17 +228,24 @@ storeListingSchema.methods.renewListing = function() {
   this.status = 'active';
   this.isActive = true;
   this.paymentStatus = 'paid';
-  this.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 gün
+  this.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
   return this.save();
 };
 
-// Index'ler
-storeListingSchema.index({ listingNumber: 1 });
+storeListingSchema.methods.deactivate = function() {
+  this.status = 'inactive';
+  this.isActive = false;
+  return this.save();
+};
+
+// Indexes
+storeListingSchema.index({ listingNumber: 1 }, { unique: true });
 storeListingSchema.index({ userId: 1 });
 storeListingSchema.index({ category: 1 });
 storeListingSchema.index({ status: 1, isActive: 1 });
 storeListingSchema.index({ createdAt: -1 });
 storeListingSchema.index({ expiryDate: 1 });
+storeListingSchema.index({ price: 1 });
 
 // Text search index
 storeListingSchema.index({

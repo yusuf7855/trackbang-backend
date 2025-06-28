@@ -1,24 +1,26 @@
-// routes/sampleRoutes.js
+// routes/sampleRoutes.js - DÜZELTİLMİŞ VERSİYONU
+
 const express = require('express');
 const router = express.Router();
 const sampleController = require('../controllers/sampleController');
 
-// Sample CRUD operations
-router.post('/samples', sampleController.createSample);
-router.get('/samples', sampleController.getAllSamples);
-router.get('/samples/stats', sampleController.getSampleStats);
-router.get('/samples/search', sampleController.searchSamples);
-router.get('/samples/:sampleId', sampleController.getSampleById);
-router.put('/samples/:sampleId', sampleController.updateSample);
-router.delete('/samples/:sampleId', sampleController.deleteSample);
+console.log('📂 SampleRoutes yükleniyor...');
 
-// Download operations
-router.post('/samples/download/generate', sampleController.generateDownloadToken);
-router.get('/download/:token', sampleController.downloadFile);
+// ============ MAIN SAMPLE ROUTES ============
+// /api/samples prefix ile kullanılacak
 
-// Backward compatibility routes
-router.post('/add', sampleController.createSample);
-router.get('/', sampleController.getAllSamples);
+// Ana sample işlemleri
+router.post('/', sampleController.createSample);                    // POST /api/samples/
+router.get('/', sampleController.getAllSamples);                    // GET /api/samples/
+router.get('/stats', sampleController.getSampleStats);              // GET /api/samples/stats
+router.get('/search', sampleController.searchSamples);              // GET /api/samples/search
+
+// Specific sample operations (ID'li route'lar en sonda olmalı)
+router.get('/:sampleId', sampleController.getSampleById);           // GET /api/samples/:sampleId
+router.put('/:sampleId', sampleController.updateSample);            // PUT /api/samples/:sampleId
+router.delete('/:sampleId', sampleController.deleteSample);         // DELETE /api/samples/:sampleId
+
+// Payment status update
 router.put('/:sampleId/payment-status', async (req, res) => {
   try {
     const { sampleId } = req.params;
@@ -45,7 +47,19 @@ router.put('/:sampleId/payment-status', async (req, res) => {
   }
 });
 
-router.post('/download/generate', sampleController.generateDownloadToken);
-router.delete('/:sampleId', sampleController.deleteSample);
+// ============ DOWNLOAD OPERATIONS - DÜZELTİLMİŞ SIRALAMA ============
+
+// Download token generation - ÖNCE specific route
+router.post('/download/generate', sampleController.generateDownloadToken); // POST /api/samples/download/generate
+
+// Download file - SONRA parametreli route  
+router.get('/download/:token', sampleController.downloadFile);             // GET /api/samples/download/:token
+
+// ============ BACKWARD COMPATIBILITY ROUTES ============
+
+// Legacy routes (deprecated but supported)
+router.post('/add', sampleController.createSample);                       // POST /api/samples/add (deprecated)
+
+console.log('✅ SampleRoutes yüklendi');
 
 module.exports = router;
