@@ -63,29 +63,28 @@ const upload = multer({
 
 // Test endpoint
 exports.testConnection = async (req, res) => {
-  console.log('🧪 Test connection çağrıldı');
-  
   try {
-    const mongoose = require('mongoose');
-    const isConnected = mongoose.connection.readyState === 1;
-    const listingCount = await StoreListing.countDocuments();
+    console.log('🧪 Store Test Connection çağrıldı');
+    const testListing = await StoreListing.findOne().limit(1);
     
     res.json({
       success: true,
-      message: 'Store service is working',
-      database: {
-        connected: isConnected,
-        listingCount: listingCount
-      },
-      uploadDir: uploadDir,
-      timestamp: new Date().toISOString()
+      message: 'Store service çalışıyor!',
+      timestamp: new Date().toISOString(),
+      dbConnection: testListing ? 'Bağlı' : 'Bağlı (veri yok)',
+      availableEndpoints: [
+        '/api/store/test',
+        '/api/store/listings',
+        '/api/store/rights',
+        '/api/store/rights/purchase',
+        '/api/store/my-listings'
+      ]
     });
-    
   } catch (error) {
-    console.error('❌ Test connection hatası:', error);
+    console.error('❌ Store test error:', error);
     res.status(500).json({
       success: false,
-      message: 'Test failed',
+      message: 'Store service test hatası',
       error: error.message
     });
   }
@@ -166,7 +165,6 @@ exports.getAllListings = async (req, res) => {
         ...img,
         url: `/uploads/store-listings/${img.filename}`
       })),
-      // Kullanıcı profil resmi için tam URL
       userId: listing.userId ? {
         ...listing.userId,
         profileImageUrl: listing.userId.profileImage?.startsWith('/uploads/') 
@@ -174,8 +172,6 @@ exports.getAllListings = async (req, res) => {
           : `/uploads/${listing.userId.profileImage || 'default-profile.jpg'}`
       } : null
     }));
-    
-    console.log(`✅ ${listings.length} ilan bulundu`);
     
     res.json({
       success: true,
@@ -190,10 +186,10 @@ exports.getAllListings = async (req, res) => {
     });
     
   } catch (error) {
-    console.error('❌ Get listings error:', error);
+    console.error('❌ Get all listings error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching listings',
+      message: 'İlanları yüklerken hata oluştu',
       error: error.message
     });
   }
@@ -201,29 +197,215 @@ exports.getAllListings = async (req, res) => {
 
 // Create new listing - BASIT VE ETKİN ÇÖZÜM
 exports.createListing = async (req, res) => {
-  console.log('📝 Create listing endpoint çağrıldı');
-  console.log('📋 Content-Type:', req.headers['content-type']);
-  console.log('📋 Request body keys:', Object.keys(req.body));
-
-  const isMultipart = req.headers['content-type']?.includes('multipart/form-data');
-  
-  if (isMultipart) {
-    // Multipart form data - Multer kullan
-    const uploadMiddleware = upload.array('images', 5);
+  try {
+    const userId = req.userId || req.user?.id;
+    console.log('👤 Create listing user ID:', userId);
     
-    uploadMiddleware(req, res, async (err) => {
-      if (err) {
-        console.error('❌ Multer error:', err);
-        // Multer hatası olsa bile resim olmadan devam et
-        req.files = [];
-      }
-      
-      await processListingCreation(req, res);
+    const { title, category, price, description, phoneNumber, province, district, fullAddress } = req.body;
+    
+    // Validation
+    if (!title || !category || !price || !description || !phoneNumber || !province || !district) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tüm zorunlu alanlar doldurulmalıdır (başlık, kategori, fiyat, açıklama, telefon, il, ilçe)',
+        missing: {
+          title: !title,
+          category: !category,
+          price: !price,
+          description: !description,
+          phoneNumber: !phoneNumber,
+          province: !province,
+          district: !district
+        }
+      });
+    }
+
+    // İlan hakkı kontrolü
+    let userRights = await ListingRights.findOne({ userId });
+    
+    if (!userRights) {
+      // Kullanıcının rights kaydı yoksa oluştur (1 ücretsiz hak ver)
+      userRights = new ListingRights({
+        userId,
+        totalRights: 1,
+        usedRights: 0,
+        availableRights: 1,
+        purchaseHistory: [{
+          rightsAmount: 1,
+          pricePerRight: 0,
+          totalPrice: 0,
+          currency: 'EUR',
+          paymentMethod: 'free_credit',
+          status: 'completed',
+          notes: 'İlk ücretsiz ilan hakkı'
+        }]
+      });
+      await userRights.save();
+      console.log('✅ Yeni kullanıcı için 1 ücretsiz hak verildi');
+    }
+    
+    // ÖNEMLI: İlan hakkı yoksa ilan oluşturmaya izin verme
+    if (userRights.availableRights <= 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'İlan hakkınız bulunmuyor. Lütfen ilan hakkı satın alın.',
+        availableRights: 0,
+        needToPurchase: true // Flutter için özel flag
+      });
+    }
+    
+    // Prepare images array
+    const images = req.files && req.files.length > 0 ? req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype
+    })) : [];
+    
+    console.log('📋 Creating listing with data:', {
+      userId,
+      title,
+      category,
+      price: parseFloat(price),
+      description,
+      phoneNumber,
+      province,
+      district,
+      fullAddress,
+      imagesCount: images.length
     });
-  } else {
-    // Regular JSON request
-    req.files = []; // Boş files array'i
-    await processListingCreation(req, res);
+    
+    // Create listing
+    const listing = new StoreListing({
+      userId,
+      title: title.trim(),
+      category,
+      price: parseFloat(price),
+      description: description.trim(),
+      phoneNumber: phoneNumber.trim(),
+      location: {
+        province: province.trim(),
+        district: district.trim(),
+        fullAddress: fullAddress ? fullAddress.trim() : '',
+        coordinates: {
+          latitude: null,
+          longitude: null
+        }
+      },
+      images,
+      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+      paymentStatus: 'paid',
+      status: 'active',
+      isActive: true,
+      listingNumber: generateListingNumber(),
+      contactCount: 0,
+      viewCount: 0
+    });
+    
+    await listing.save();
+    console.log('✅ Listing created with ID:', listing._id);
+    
+    // İlan hakkını kullan
+    userRights.usedRights += 1;
+    userRights.availableRights -= 1;
+    userRights.usageHistory.push({
+      listingId: listing._id,
+      usedAt: new Date(),
+      action: 'create_listing',
+      notes: `İlan oluşturuldu: ${title}`
+    });
+    await userRights.save();
+    
+    console.log('✅ İlan hakkı kullanıldı. Kalan:', userRights.availableRights);
+    
+    // Populate user data for response
+    const populatedListing = await StoreListing.findById(listing._id)
+      .populate('userId', 'username email firstName lastName profileImage');
+    
+    res.status(201).json({
+      success: true,
+      message: 'İlan başarıyla oluşturuldu!',
+      listing: {
+        ...populatedListing.toJSON(),
+        images: populatedListing.images.map(img => ({
+          ...img,
+          url: `/uploads/store-listings/${img.filename}`
+        })),
+        userId: populatedListing.userId ? {
+          ...populatedListing.userId.toObject(),
+          profileImageUrl: populatedListing.userId.profileImage?.startsWith('/uploads/') 
+            ? populatedListing.userId.profileImage 
+            : `/uploads/${populatedListing.userId.profileImage || 'default-profile.jpg'}`
+        } : null
+      },
+      remainingRights: userRights.availableRights
+    });
+    
+  } catch (error) {
+    console.error('❌ Create listing error:', error);
+    
+    // Clean up uploaded files on error
+    if (req.files && req.files.length > 0) {
+      req.files.forEach(file => {
+        const filePath = path.join(__dirname, '../uploads/store-listings', file.filename);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      });
+    }
+    
+    res.status(500).json({
+      success: false,
+      message: 'İlan oluşturulurken hata oluştu',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+};
+
+exports.getListingById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const listing = await StoreListing.findById(id)
+      .populate('userId', 'username email firstName lastName profileImage');
+    
+    if (!listing) {
+      return res.status(404).json({
+        success: false,
+        message: 'İlan bulunamadı'
+      });
+    }
+    
+    // View count artır
+    listing.viewCount += 1;
+    await listing.save();
+    
+    const listingWithImages = {
+      ...listing.toJSON(),
+      images: listing.images.map(img => ({
+        ...img,
+        url: `/uploads/store-listings/${img.filename}`
+      })),
+      userId: listing.userId ? {
+        ...listing.userId.toObject(),
+        profileImageUrl: listing.userId.profileImage?.startsWith('/uploads/') 
+          ? listing.userId.profileImage 
+          : `/uploads/${listing.userId.profileImage || 'default-profile.jpg'}`
+      } : null
+    };
+
+    res.json({
+      success: true,
+      listing: listingWithImages
+    });
+
+  } catch (error) {
+    console.error('❌ Get listing by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'İlan yüklenirken hata oluştu',
+      error: error.message
+    });
   }
 };
 
@@ -541,25 +723,55 @@ async function processListingCreation(req, res) {
 // DÜZELTİLMİŞ - Get user's listing rights
 exports.getUserRights = async (req, res) => {
   try {
-    const userId = req.user.id;
-    
-    let userRights = await ListingRights.findOne({ userId });
-    
-    if (!userRights) {
-      userRights = new ListingRights({ userId });
-      await userRights.save();
+    const userId = req.userId || req.user?.id;
+    console.log('👤 Get user rights for:', userId);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Kullanıcı kimliği bulunamadı'
+      });
     }
-    
+
+    let userRights = await ListingRights.findOne({ userId });
+
+    // Eğer kullanıcının ilan hakkı kaydı yoksa oluştur (1 ücretsiz hak ver)
+    if (!userRights) {
+      userRights = new ListingRights({
+        userId,
+        totalRights: 1,
+        usedRights: 0,
+        availableRights: 1,
+        purchaseHistory: [{
+          rightsAmount: 1,
+          pricePerRight: 0,
+          totalPrice: 0,
+          currency: 'EUR',
+          paymentMethod: 'free_credit',
+          status: 'completed',
+          notes: 'İlk ücretsiz ilan hakkı'
+        }]
+      });
+      await userRights.save();
+      console.log('✅ Yeni kullanıcı için 1 ücretsiz hak verildi');
+    }
+
     res.json({
       success: true,
-      rights: userRights
+      rights: {
+        totalRights: userRights.totalRights,
+        usedRights: userRights.usedRights,
+        availableRights: userRights.availableRights,
+        purchaseHistory: userRights.purchaseHistory,
+        usageHistory: userRights.usageHistory
+      }
     });
-    
+
   } catch (error) {
     console.error('❌ Get user rights error:', error);
     res.status(500).json({
       success: false,
-      message: 'Haklar yüklenirken hata oluştu',
+      message: 'İlan hakları yüklenirken hata oluştu',
       error: error.message
     });
   }
@@ -570,162 +782,84 @@ exports.purchaseListingRights = async (req, res) => {
   try {
     const userId = req.userId || req.user?.id;
     const { rightsAmount = 1 } = req.body;
-    
+
     console.log('💳 Purchase request:', { userId, rightsAmount });
-    
-    if (rightsAmount < 1 || rightsAmount > 10) {
-      return res.status(400).json({
+
+    if (!userId) {
+      return res.status(401).json({
         success: false,
-        message: 'Rights amount must be between 1 and 10'
+        message: 'Kullanıcı kimliği bulunamadı'
       });
     }
-    
-    const pricePerRight = 4.00;
-    const totalPrice = rightsAmount * pricePerRight;
-    
+
+    if (!rightsAmount || rightsAmount < 1 || rightsAmount > 10) {
+      return res.status(400).json({
+        success: false,
+        message: 'Geçersiz hak miktarı (1-10 arası olmalı)'
+      });
+    }
+
     let userRights = await ListingRights.findOne({ userId });
-    
+
     if (!userRights) {
+      // Kullanıcının rights kaydı yoksa oluştur
       userRights = new ListingRights({
         userId,
         totalRights: 0,
         usedRights: 0,
-        availableRights: 0
+        availableRights: 0,
+        purchaseHistory: [],
+        usageHistory: []
       });
     }
-    
-    // Add purchase to history
+
+    // Basit satın alma - ödeme sistemi yok
+    const pricePerRight = 4.00; // 4 Euro per right
+    const totalPrice = rightsAmount * pricePerRight;
+
+    // Hak ekleme
+    userRights.totalRights += rightsAmount;
+    userRights.availableRights += rightsAmount;
+
+    // Satın alma geçmişine ekle
     userRights.purchaseHistory.push({
       rightsAmount,
       pricePerRight,
       totalPrice,
       currency: 'EUR',
       paymentMethod: 'direct_purchase',
-      status: 'completed'
+      status: 'completed',
+      notes: `${rightsAmount} ilan hakkı satın alındı`
     });
-    
-    // Update rights
-    userRights.totalRights += rightsAmount;
-    userRights.availableRights += rightsAmount;
-    
+
     await userRights.save();
-    
-    console.log('✅ Rights purchased successfully:', {
-      amount: rightsAmount,
-      totalCost: totalPrice,
-      newAvailable: userRights.availableRights
+
+    console.log('✅ İlan hakkı satın alındı:', {
+      rightsAmount,
+      totalPrice,
+      newAvailableRights: userRights.availableRights
     });
-    
+
     res.json({
       success: true,
-      message: `Successfully purchased ${rightsAmount} listing right(s)`,
+      message: `${rightsAmount} ilan hakkı başarıyla satın alındı!`,
+      purchase: {
+        rightsAmount,
+        totalPrice,
+        currency: 'EUR'
+      },
       rights: {
         totalRights: userRights.totalRights,
         usedRights: userRights.usedRights,
         availableRights: userRights.availableRights
-      },
-      totalCost: totalPrice,
-      currency: 'EUR'
+      }
     });
-    
+
   } catch (error) {
     console.error('❌ Purchase rights error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error purchasing listing rights',
-      error: error.message
-    });
-  }
-};
-
-// Get user's own listings
-exports.getUserListings = async (req, res) => {
-  try {
-    const userId = req.userId || req.user?.id;
-    const { page = 1, limit = 10 } = req.query;
-    
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
-    const listings = await StoreListing.find({ userId })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-    
-    const total = await StoreListing.countDocuments({ userId });
-    
-    const listingsWithImages = listings.map(listing => ({
-      ...listing,
-      images: listing.images.map(img => ({
-        ...img,
-        url: `/uploads/store-listings/${img.filename}`
-      }))
-    }));
-    
-    res.json({
-      success: true,
-      listings: listingsWithImages,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(total / parseInt(limit)),
-        totalItems: total
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ Get user listings error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching user listings',
-      error: error.message
-    });
-  }
-};
-
-// Get single listing
-exports.getListingById = async (req, res) => {
-  try {
-    const listingId = req.params.id;
-    
-    const listing = await StoreListing.findById(listingId)
-      .populate('userId', 'username email firstName lastName profileImage bio phone');
-    
-    if (!listing) {
-      return res.status(404).json({
-        success: false,
-        message: 'İlan bulunamadı'
-      });
-    }
-
-    // Increment view count
-    await listing.incrementViews();
-
-    // Add image URLs
-    const listingWithImages = {
-      ...listing.toObject(),
-      images: listing.images.map(img => ({
-        ...img,
-        url: `/uploads/store-listings/${img.filename}`
-      })),
-      // Kullanıcı profil resmi için tam URL
-      userId: listing.userId ? {
-        ...listing.userId.toObject(),
-        profileImageUrl: listing.userId.profileImage?.startsWith('/uploads/') 
-          ? listing.userId.profileImage 
-          : `/uploads/${listing.userId.profileImage || 'default-profile.jpg'}`
-      } : null
-    };
-
-    res.json({
-      success: true,
-      listing: listingWithImages
-    });
-
-  } catch (error) {
-    console.error('❌ Get listing by ID error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'İlan yüklenirken hata oluştu',
+      message: 'İlan hakkı satın alınırken hata oluştu',
       error: error.message
     });
   }
@@ -1012,76 +1146,80 @@ exports.contactSeller = async (req, res) => {
 exports.updateListing = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.userId || req.user?.id;
-    const { title, category, price, description, phoneNumber } = req.body;
+    const userId = req.user.id;
+    const updates = req.body;
     
     const listing = await StoreListing.findOne({ _id: id, userId });
     
     if (!listing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found or unauthorized'
+        message: 'İlan bulunamadı veya düzenleme yetkiniz yok'
       });
     }
     
-    // Update fields
-    if (title) listing.title = title;
-    if (category) listing.category = category;
-    if (price !== undefined) listing.price = parseFloat(price);
-    if (description) listing.description = description;
-    if (phoneNumber) listing.phoneNumber = phoneNumber;
+    // Update allowed fields
+    const allowedUpdates = ['title', 'description', 'category', 'price', 'phoneNumber'];
+    allowedUpdates.forEach(field => {
+      if (updates[field] !== undefined) {
+        listing[field] = updates[field];
+      }
+    });
     
     await listing.save();
     
     res.json({
       success: true,
-      message: 'Listing updated successfully',
-      listing: {
-        ...listing.toJSON(),
-        images: listing.images.map(img => ({
-          ...img,
-          url: `/uploads/store-listings/${img.filename}`
-        }))
-      }
+      message: 'İlan başarıyla güncellendi',
+      listing
     });
     
   } catch (error) {
     console.error('❌ Update listing error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating listing',
+      message: 'İlan güncellenirken hata oluştu',
       error: error.message
     });
   }
 };
 
+
 // Delete listing
 exports.deleteListing = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.userId || req.user?.id;
+    const userId = req.user.id;
     
     const listing = await StoreListing.findOne({ _id: id, userId });
     
     if (!listing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found or unauthorized'
+        message: 'İlan bulunamadı veya silme yetkiniz yok'
       });
     }
     
-    await StoreListing.findByIdAndDelete(id);
+    // Delete images
+    listing.images.forEach(img => {
+      const filePath = path.join(__dirname, '../uploads/store-listings', img.filename);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+    });
+    
+    await listing.deleteOne();
     
     res.json({
       success: true,
-      message: 'Listing deleted successfully'
+      message: 'İlan başarıyla silindi'
     });
     
   } catch (error) {
     console.error('❌ Delete listing error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error deleting listing',
+      message: 'İlan silinirken hata oluştu',
       error: error.message
     });
   }
@@ -1091,24 +1229,23 @@ exports.deleteListing = async (req, res) => {
 exports.renewListing = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.userId || req.user?.id;
+    const userId = req.user.id;
     
     const listing = await StoreListing.findOne({ _id: id, userId });
     
     if (!listing) {
       return res.status(404).json({
         success: false,
-        message: 'Listing not found or unauthorized'
+        message: 'İlan bulunamadı veya yenileme yetkiniz yok'
       });
     }
     
+    // Check if user has available rights for renewal
     const userRights = await ListingRights.findOne({ userId });
-    
     if (!userRights || userRights.availableRights <= 0) {
       return res.status(403).json({
         success: false,
-        message: 'No listing rights available. Please purchase listing rights first.',
-        availableRights: userRights?.availableRights || 0
+        message: 'İlan yenilemek için hakkınız bulunmuyor'
       });
     }
     
@@ -1118,26 +1255,21 @@ exports.renewListing = async (req, res) => {
     listing.isActive = true;
     await listing.save();
     
-    // Use one listing right
+    // Use one right
     userRights.usedRights += 1;
     userRights.availableRights -= 1;
     userRights.usageHistory.push({
       listingId: listing._id,
       usedAt: new Date(),
-      action: 'renew_listing'
+      action: 'renew_listing',
+      notes: `İlan yenilendi: ${listing.title}`
     });
     await userRights.save();
     
     res.json({
       success: true,
-      message: 'Listing renewed successfully',
-      listing: {
-        ...listing.toJSON(),
-        images: listing.images.map(img => ({
-          ...img,
-          url: `/uploads/store-listings/${img.filename}`
-        }))
-      },
+      message: 'İlan başarıyla yenilendi',
+      listing,
       remainingRights: userRights.availableRights
     });
     
@@ -1145,7 +1277,7 @@ exports.renewListing = async (req, res) => {
     console.error('❌ Renew listing error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error renewing listing',
+      message: 'İlan yenilenirken hata oluştu',
       error: error.message
     });
   }
@@ -1157,7 +1289,6 @@ function generateListingNumber() {
   const random = Math.random().toString(36).substr(2, 4).toUpperCase();
   return `IL${timestamp}${random}`;
 }
-
 // Admin functions (optional)
 exports.adminGetAllListings = async (req, res) => {
   try {
