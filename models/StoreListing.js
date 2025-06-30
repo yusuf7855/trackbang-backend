@@ -1,4 +1,4 @@
-// models/StoreListing.js - DÜZELTILMIŞ KATEGORILER
+// models/StoreListing.js - GÜNCELLENMİŞ VERSİYON - İl/İlçe ve Konum Desteği
 
 const mongoose = require('mongoose');
 
@@ -27,7 +27,7 @@ const storeListingSchema = new mongoose.Schema({
       'Giyim', 
       'Ev & Yaşam',
       'Spor',
-      'Kitap',
+      'Kitab',
       'Oyun',
       'Müzik Aleti',
       'Diğer'
@@ -52,6 +52,37 @@ const storeListingSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  // YENİ - Konum bilgileri
+  location: {
+    province: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    district: {
+      type: String,
+      required: true,
+      trim: true
+    },
+    // Google Maps için koordinatlar (opsiyonel - gelecekte kullanılabilir)
+    coordinates: {
+      latitude: {
+        type: Number,
+        min: -90,
+        max: 90
+      },
+      longitude: {
+        type: Number,
+        min: -180,
+        max: 180
+      }
+    },
+    // Tam adres (opsiyonel)
+    fullAddress: {
+      type: String,
+      trim: true
+    }
   },
   images: [{
     filename: {
@@ -78,7 +109,7 @@ const storeListingSchema = new mongoose.Schema({
   paymentStatus: {
     type: String,
     enum: ['paid', 'unpaid', 'expired'],
-    default: 'paid' // Default to paid for testing
+    default: 'paid'
   },
   expiryDate: {
     type: Date,
@@ -143,7 +174,15 @@ storeListingSchema.virtual('imageUrls').get(function() {
   return this.images.map(img => `/uploads/store-listings/${img.filename}`);
 });
 
-// Static methods
+// Virtual for location display
+storeListingSchema.virtual('locationDisplay').get(function() {
+  if (this.location && this.location.province && this.location.district) {
+    return `${this.location.district}, ${this.location.province}`;
+  }
+  return '';
+});
+
+// Static methods - YENİ konum filtresi eklendi
 storeListingSchema.statics.getActiveListings = function(options = {}) {
   const query = {
     status: 'active',
@@ -155,13 +194,22 @@ storeListingSchema.statics.getActiveListings = function(options = {}) {
     query.category = options.category;
   }
   
+  if (options.province) {
+    query['location.province'] = options.province;
+  }
+  
+  if (options.district) {
+    query['location.district'] = options.district;
+  }
+  
   if (options.priceMin || options.priceMax) {
     query.price = {};
     if (options.priceMin) query.price.$gte = options.priceMin;
     if (options.priceMax) query.price.$lte = options.priceMax;
   }
   
-  let queryBuilder = this.find(query).populate('userId', 'username firstName lastName');
+  let queryBuilder = this.find(query)
+    .populate('userId', 'username firstName lastName profileImage');
   
   // Sorting
   switch (options.sort) {
@@ -191,7 +239,9 @@ storeListingSchema.statics.searchListings = function(searchQuery, options = {}) 
         $or: [
           { title: { $regex: searchQuery, $options: 'i' } },
           { description: { $regex: searchQuery, $options: 'i' } },
-          { listingNumber: { $regex: searchQuery, $options: 'i' } }
+          { listingNumber: { $regex: searchQuery, $options: 'i' } },
+          { 'location.province': { $regex: searchQuery, $options: 'i' } },
+          { 'location.district': { $regex: searchQuery, $options: 'i' } }
         ]
       }
     ]
@@ -201,16 +251,9 @@ storeListingSchema.statics.searchListings = function(searchQuery, options = {}) 
     query.$and.push({ category: options.category });
   }
   
-  return this.find(query).populate('userId', 'username firstName lastName').sort({ createdAt: -1 });
-};
-
-storeListingSchema.statics.getByCategory = function(category) {
-  return this.find({ 
-    category: category, 
-    status: 'active',
-    isActive: true,
-    expiryDate: { $gt: new Date() }
-  }).populate('userId', 'username firstName lastName').sort({ createdAt: -1 });
+  return this.find(query)
+    .populate('userId', 'username firstName lastName profileImage')
+    .sort({ createdAt: -1 });
 };
 
 // Instance methods
@@ -246,17 +289,23 @@ storeListingSchema.index({ status: 1, isActive: 1 });
 storeListingSchema.index({ createdAt: -1 });
 storeListingSchema.index({ expiryDate: 1 });
 storeListingSchema.index({ price: 1 });
+storeListingSchema.index({ 'location.province': 1 });
+storeListingSchema.index({ 'location.district': 1 });
 
-// Text search index
+// Text search index - YENİ konum alanları eklendi
 storeListingSchema.index({
   title: 'text',
   description: 'text',
-  listingNumber: 'text'
+  listingNumber: 'text',
+  'location.province': 'text',
+  'location.district': 'text'
 }, {
   name: 'listing_search_index',
   weights: {
     title: 3,
     listingNumber: 2,
+    'location.province': 2,
+    'location.district': 2,
     description: 1
   }
 });
