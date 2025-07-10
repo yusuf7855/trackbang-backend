@@ -222,6 +222,7 @@ const hotRoutes = require('./routes/hotRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const storeRoutes = require('./routes/storeRoutes');
+const messageRoutes = require('./routes/messageRoutes'); // YENİ EKLEME
 
 console.log('📡 API Routes yükleniyor...');
 
@@ -233,6 +234,7 @@ app.use('/api/playlists', playlistRoutes);
 app.use('/api/hot', hotRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/messages', messageRoutes); // YENİ EKLEME
 app.use('/api', authRoutes);
 app.use('/api/samples', sampleRoutes);
 
@@ -286,7 +288,10 @@ app.use('*', (req, res) => {
       'Test Image': '/debug/test-image/FILENAME.webp',
       'Serve Image': '/debug/serve-image/FILENAME.webp',
       'Static Files': '/uploads/store-listings/FILENAME.webp',
-      'API Store': '/api/store/listings'
+      'API Store': '/api/store/listings',
+      'API Messages': '/api/messages/health', // YENİ EKLEME
+      'API Messages Send': '/api/messages/send',
+      'API Messages Conversations': '/api/messages/conversations'
     }
   });
 });
@@ -324,11 +329,14 @@ async function startServer() {
       console.log(`📍 API Base URL: http://localhost:${PORT}`);
       console.log(`🖼️ Static Files: http://localhost:${PORT}/uploads`);
       console.log(`🔍 Debug Uploads: http://localhost:${PORT}/debug/uploads`);
+      console.log(`💬 Messages API: http://localhost:${PORT}/api/messages/health`); // YENİ EKLEME
+      console.log(`📱 Message Send: http://localhost:${PORT}/api/messages/send`);
+      console.log(`💭 Conversations: http://localhost:${PORT}/api/messages/conversations`);
       console.log(`🧪 Test Image: http://localhost:${PORT}/debug/test-image/6849ebb9f568eb5091e3acb6-1749675056129-382232772.webp`);
       console.log(`📁 Direct Image: http://localhost:${PORT}/uploads/store-listings/6849ebb9f568eb5091e3acb6-1749675056129-382232772.webp`);
       console.log('');
-      console.log('💡 Resim URL test için:');
-      console.log(`   curl -I http://localhost:${PORT}/uploads/store-listings/6849ebb9f568eb5091e3acb6-1749675056129-382232772.webp`);
+      console.log('💡 Mesajlaşma API test için:');
+      console.log(`   curl -X GET http://localhost:${PORT}/api/messages/health`);
       console.log('');
     });
     
