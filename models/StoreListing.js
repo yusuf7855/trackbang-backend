@@ -22,15 +22,23 @@ const storeListingSchema = new mongoose.Schema({
   category: {
     type: String,
     required: true,
-    enum: [
-      'Elektronik',
-      'Giyim', 
-      'Ev & Yaşam',
-      'Spor',
-      'Kitab',
-      'Oyun',
-      'Müzik Aleti',
-      'Diğer'
+  enum: [
+      'ses-kartlari',
+      'monitorler',
+      'midi-klavyeler',
+      'kayit-setleri',
+      'produksiyon-bilgisayarlari',
+      'dj-ekipmanlari',
+      'produksiyon-kontrol-cihazlari',
+      'gaming-podcast-ekipmanlari',
+      'mikrofonlar',
+      'kulakliklar',
+      'studyo-dj-ekipmanlari',
+      'kablolar',
+      'arabirimler',
+      'kayit-cihazlari',
+      'pre-amfiler-efektler',
+      'yazilimlar'
     ]
   },
   price: {
