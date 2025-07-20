@@ -223,10 +223,12 @@ const searchRoutes = require('./routes/searchRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const storeRoutes = require('./routes/storeRoutes');
 const messageRoutes = require('./routes/messageRoutes'); // YENİ EKLEME
+const paymentRoutes = require('./routes/paymentRoutes');
 
 console.log('📡 API Routes yükleniyor...');
 
 // API Routes - SIRALAMA ÖNEMLİ!
+app.use('/api/payments', paymentRoutes);
 app.use('/api/store', storeRoutes);
 app.use('/api/download', downloadRoutes);
 app.use('/api/music', musicRoutes);

@@ -57,7 +57,15 @@ const userSchema = new mongoose.Schema({
   lastLoginAt: { 
     type: Date 
   },
-  
+
+  subscription: {
+  isActive: { type: Boolean, default: false },
+  type: { type: String, enum: ['free', 'premium'], default: 'free' },
+  startDate: Date,
+  endDate: Date,
+  paymentMethod: String,
+  lastPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }
+},
   // Mağaza ile ilgili ayarlar (opsiyonel)
   storeSettings: {
     // Kullanıcının mağaza tercihlerini saklamak için
@@ -103,7 +111,11 @@ userSchema.virtual('activeListings', {
   foreignField: 'userId',
   match: { status: 'active', isActive: true }
 });
-
+userSchema.virtual('isPremium').get(function() {
+  return this.subscription.isActive && 
+         this.subscription.endDate && 
+         new Date() < this.subscription.endDate;
+});
 // Virtual field: Tam isim
 userSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`.trim();
