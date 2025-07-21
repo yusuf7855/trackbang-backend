@@ -592,7 +592,7 @@ function generateListingNumber() {
   return `IL${timestamp}${random}`;
 }
 
-// Listing oluşturma işlemini ayırıyoruz
+// Listing oluşturma işlemini ayırıyoruzz
 async function processListingCreation(req, res) {
   try {
     const userId = req.userId || req.user?.id;
