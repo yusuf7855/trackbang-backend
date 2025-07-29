@@ -1,4 +1,4 @@
-// app.js - STATİK DOSYA SUNUMU DÜZELTMESİ
+// app.js - STATİK DOSYA SUNUMU DÜZELTMESİ + ANA SAYFA
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -85,6 +85,272 @@ app.use('/assets', express.static(assetsPath, {
     res.setHeader('Cache-Control', 'public, max-age=86400');
   }
 }));
+
+// ============ ANA SAYFA - SERVER DURUMU ============
+
+app.get('/', (req, res) => {
+  const serverInfo = {
+    status: 'active',
+    message: 'Server çalışıyor! 🚀',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    uptimeFormatted: `${Math.floor(process.uptime() / 3600)}s ${Math.floor((process.uptime() % 3600) / 60)}d ${Math.floor(process.uptime() % 60)}s`,
+    environment: process.env.NODE_ENV || 'development',
+    nodeVersion: process.version,
+    port: process.env.PORT || 5000,
+    database: {
+      connected: mongoose.connection.readyState === 1,
+      status: mongoose.connection.readyState === 1 ? 'Bağlı' : 'Bağlantısız',
+      name: mongoose.connection.name || 'Bilinmiyor'
+    },
+    endpoints: {
+      health: `${req.protocol}://${req.get('host')}/health`,
+      apiStore: `${req.protocol}://${req.get('host')}/api/store/listings`,
+      apiMessages: `${req.protocol}://${req.get('host')}/api/messages/health`,
+      debugUploads: `${req.protocol}://${req.get('host')}/debug/uploads`,
+      staticFiles: `${req.protocol}://${req.get('host')}/uploads`,
+      testImage: `${req.protocol}://${req.get('host')}/debug/test-image/example.webp`
+    }
+  };
+
+  // HTML response için tarayıcıdan geliyorsa
+  if (req.headers.accept && req.headers.accept.includes('text/html')) {
+    const html = `
+    <!DOCTYPE html>
+    <html lang="tr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Server Durumu</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: #000000;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: #ffffff;
+                margin: 0;
+                padding: 20px;
+            }
+            .container {
+                background: #111111;
+                border: 2px solid #333333;
+                border-radius: 15px;
+                padding: 40px;
+                max-width: 800px;
+                width: 100%;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            }
+            .status-badge {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 16px;
+                border-radius: 25px;
+                font-weight: 600;
+                margin-bottom: 20px;
+            }
+            .status-badge.active {
+                background: #22c55e;
+                color: #ffffff;
+            }
+            .status-badge.inactive {
+                background: #ef4444;
+                color: #ffffff;
+            }
+            .status-dot {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                animation: pulse 2s infinite;
+            }
+            .status-dot.active {
+                background: #ffffff;
+            }
+            .status-dot.inactive {
+                background: #ffffff;
+            }
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.5; }
+                100% { opacity: 1; }
+            }
+            h1 { 
+                font-size: 2.5rem; 
+                margin-bottom: 10px;
+                color: #ffffff;
+                font-weight: 700;
+            }
+            .info-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+                margin: 30px 0;
+            }
+            .info-card {
+                background: #222222;
+                padding: 20px;
+                border-radius: 10px;
+                border: 1px solid #444444;
+            }
+            .info-card h3 {
+                color: #ffffff;
+                margin-bottom: 10px;
+                font-size: 1.1rem;
+                font-weight: 600;
+            }
+            .info-card p {
+                font-size: 0.9rem;
+                color: #cccccc;
+                line-height: 1.4;
+            }
+            .endpoints {
+                margin-top: 30px;
+            }
+            .endpoint-list {
+                display: grid;
+                gap: 10px;
+                margin-top: 15px;
+            }
+            .endpoint-item {
+                background: #222222;
+                padding: 12px 16px;
+                border-radius: 8px;
+                border-left: 4px solid #ffffff;
+                border: 1px solid #444444;
+            }
+            .endpoint-item a {
+                color: #cccccc;
+                text-decoration: none;
+                font-family: 'Courier New', monospace;
+                font-size: 0.9rem;
+            }
+            .endpoint-item a:hover {
+                color: #ffffff;
+            }
+            .database-status {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .db-indicator {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+            }
+            .db-indicator.connected {
+                background: #22c55e;
+            }
+            .db-indicator.disconnected {
+                background: #ef4444;
+            }
+            .refresh-btn {
+                background: #ffffff;
+                color: #000000;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                margin-top: 20px;
+                transition: all 0.2s;
+            }
+            .refresh-btn:hover {
+                background: #cccccc;
+                transform: translateY(-1px);
+            }
+            .timestamp {
+                text-align: center;
+                color: #888888;
+                font-size: 0.8rem;
+                margin-top: 20px;
+                font-family: 'Courier New', monospace;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="status-badge ${mongoose.connection.readyState === 1 ? 'active' : 'inactive'}">
+                <div class="status-dot ${mongoose.connection.readyState === 1 ? 'active' : 'inactive'}"></div>
+                <span>${mongoose.connection.readyState === 1 ? 'AKTİF' : 'PASİF'}</span>
+            </div>
+            
+            <h1>Server Çalışıyor! 🚀</h1>
+            <p style="opacity: 0.8; margin-bottom: 20px;">Sunucunuz başarıyla çalışıyor ve istekleri işlemeye hazır.</p>
+            
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3>⚡ Sunucu Bilgileri</h3>
+                    <p><strong>Port:</strong> ${serverInfo.port}</p>
+                    <p><strong>Ortam:</strong> ${serverInfo.environment}</p>
+                    <p><strong>Node.js:</strong> ${serverInfo.nodeVersion}</p>
+                    <p><strong>Çalışma Süresi:</strong> ${serverInfo.uptimeFormatted}</p>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🗄️ Veritabanı</h3>
+                    <div class="database-status">
+                        <div class="db-indicator ${mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'}"></div>
+                        <p><strong>Durum:</strong> ${serverInfo.database.status}</p>
+                    </div>
+                    <p><strong>Veritabanı:</strong> ${serverInfo.database.name}</p>
+                </div>
+            </div>
+            
+            <button class="refresh-btn" onclick="window.location.reload()">
+                🔄 Yenile
+            </button>
+            
+            <div class="timestamp">
+                Son güncelleme: ${new Date().toLocaleString('tr-TR')}
+            </div>
+        </div>
+        
+        <script>
+            // Auto refresh every 30 seconds
+            setTimeout(() => {
+                window.location.reload();
+            }, 30000);
+        </script>
+    </body>
+    </html>
+    `;
+    
+    res.send(html);
+  } else {
+    // JSON response için API çağrıları
+    res.json({
+      success: true,
+      ...serverInfo
+    });
+  }
+});
+
+// ============ SAĞLIK KONTROL ENDPOINT'İ ============
+
+app.get('/health', (req, res) => {
+  const healthCheck = {
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    database: {
+      connected: mongoose.connection.readyState === 1,
+      readyState: mongoose.connection.readyState
+    },
+    environment: process.env.NODE_ENV || 'development'
+  };
+  
+  const statusCode = mongoose.connection.readyState === 1 ? 200 : 503;
+  
+  res.status(statusCode).json({
+    success: mongoose.connection.readyState === 1,
+    ...healthCheck
+  });
+});
 
 // ============ DEBUG ENDPOINTS (STATİK DOSYALARDAN SONRA) ============
 
@@ -286,12 +552,14 @@ app.use('*', (req, res) => {
     success: false,
     message: `Route not found: ${req.method} ${req.originalUrl}`,
     availableEndpoints: {
+      'Home': '/',
+      'Health Check': '/health',
       'Debug Uploads': '/debug/uploads',
       'Test Image': '/debug/test-image/FILENAME.webp',
       'Serve Image': '/debug/serve-image/FILENAME.webp',
       'Static Files': '/uploads/store-listings/FILENAME.webp',
       'API Store': '/api/store/listings',
-      'API Messages': '/api/messages/health', // YENİ EKLEME
+      'API Messages': '/api/messages/health',
       'API Messages Send': '/api/messages/send',
       'API Messages Conversations': '/api/messages/conversations'
     }
@@ -327,19 +595,6 @@ async function startServer() {
       console.log('🎉 =================================');
       console.log('🚀 SERVER BAŞARILI BİR ŞEKİLDE BAŞLADI!');
       console.log('🎉 =================================');
-      console.log('');
-      console.log(`📍 API Base URL: http://localhost:${PORT}`);
-      console.log(`🖼️ Static Files: http://localhost:${PORT}/uploads`);
-      console.log(`🔍 Debug Uploads: http://localhost:${PORT}/debug/uploads`);
-      console.log(`💬 Messages API: http://localhost:${PORT}/api/messages/health`); // YENİ EKLEME
-      console.log(`📱 Message Send: http://localhost:${PORT}/api/messages/send`);
-      console.log(`💭 Conversations: http://localhost:${PORT}/api/messages/conversations`);
-      console.log(`🧪 Test Image: http://localhost:${PORT}/debug/test-image/6849ebb9f568eb5091e3acb6-1749675056129-382232772.webp`);
-      console.log(`📁 Direct Image: http://localhost:${PORT}/uploads/store-listings/6849ebb9f568eb5091e3acb6-1749675056129-382232772.webp`);
-      console.log('');
-      console.log('💡 Mesajlaşma API test için:');
-      console.log(`   curl -X GET http://localhost:${PORT}/api/messages/health`);
-      console.log('');
     });
     
     server.on('error', (error) => {

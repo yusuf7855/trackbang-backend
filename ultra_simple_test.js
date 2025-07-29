@@ -48,9 +48,6 @@ const server = app.listen(PORT, '0.0.0.0');
 
 server.on('listening', () => {
   console.log('✅ Ultra simple server started on port', PORT);
-  console.log('📍 http://localhost:5000/health');
-  console.log('📍 http://localhost:5000/api/store/test');
-  console.log('📍 http://localhost:5000/api/store/listings');
 });
 
 server.on('error', (error) => {

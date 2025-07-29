@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:5000';
+const apiBaseUrl = process.env.API_BASE_URL || 'https://trackbangserver.com.tr';
 
 // Multer configuration for multiple file types
 const storage = multer.diskStorage({
@@ -378,7 +378,7 @@ exports.generateDownloadToken = async (req, res) => {
     console.log('Token created and saved:', token);
 
     // DÜZELTME: Doğru port numarasını kullan
-    const baseUrl = process.env.REACT_APP_API_BASE_URL || 'http://192.168.1.106:5000';
+    const baseUrl = process.env.REACT_APP_API_BASE_URL || 'https://trackbangserver.com.tr';
     
     const response = {
       token: token,
