@@ -27,7 +27,7 @@ module.exports = (req, res, next) => {
 
     console.log('🔑 Token başlangıcı:', token.substring(0, 20) + '...');
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "supersecretkey");
+    const decoded = jwt.verify(token,  "supersecretkey");
     
     // ✅ DÜZELTME: req.user objesi oluştur (notification controller'da req.user.id kullanılıyor)
     req.user = {

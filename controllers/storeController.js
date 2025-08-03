@@ -357,7 +357,7 @@ exports.createListing = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'İlan oluşturulurken hata oluştu',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: 'production' === 'production' ? error.message : 'Internal server error'
     });
   }
 };
@@ -580,7 +580,7 @@ async function processListingCreation(req, res) {
     res.status(500).json({
       success: false,
       message: 'İlan oluşturulurken hata oluştu',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+      error: 'production' === 'production' ? error.message : 'Something went wrong'
     });
   }
 }
@@ -715,7 +715,7 @@ async function processListingCreation(req, res) {
     res.status(500).json({
       success: false,
       message: 'Error creating listing',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+      error: 'production' === 'production' ? error.message : 'Internal server error'
     });
   }
 }

@@ -1,14 +1,36 @@
-// models/userModel.js - GÜNCELLENMİŞ VERSİYON - İlan Hakkı Uyumlu
+// models/userModel.js - Index duplicatelerinden temizlenmiş versiyon
 
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  email: { type: String, required: true, unique: true },
+  username: { 
+    type: String, 
+    required: true, 
+    unique: true  // Bu yeterli, ayrıca index tanımlamaya gerek yok
+  },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true  // Bu yeterli, ayrıca index tanımlamaya gerek yok
+  },
   password: { type: String, required: true },
   firstName: { type: String, required: true },
   lastName: { type: String, required: true },
-  phone: { type: String, required: true },
+  
+  // Phone alan opsiyonel - düzeltilmiş
+  phone: { 
+    type: String, 
+    required: false,
+    default: '',
+    validate: {
+      validator: function(v) {
+        if (!v || v.trim() === '') return true;
+        return /^[0-9+\-\s()]{10,15}$/.test(v);
+      },
+      message: 'Geçerli bir telefon numarası girin'
+    }
+  },
+  
   profileImage: { 
     type: String, 
     default: 'image.jpg',
@@ -19,9 +41,9 @@ const userSchema = new mongoose.Schema({
   bio: { 
     type: String, 
     default: '',
-    maxlength: 300 // 300 karakter sınırı
+    maxlength: 300
   },
-  profileLinks: [{ // Tek link yerine 5 link dizisi
+  profileLinks: [{
     title: { type: String, required: true, maxlength: 50 },
     url: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
@@ -42,9 +64,6 @@ const userSchema = new mongoose.Schema({
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   
-  // İlan hakkı ile ilgili virtual alanlar (ayrı koleksiyonda tutuluyor)
-  // Bu alanlar gerçek değil, sadece referans için - gerçek veriler ListingRights modeline taşındı
-  
   // Şifre sıfırlama
   resetToken: String,
   resetTokenExpire: Date,
@@ -59,16 +78,16 @@ const userSchema = new mongoose.Schema({
   },
 
   subscription: {
-  isActive: { type: Boolean, default: false },
-  type: { type: String, enum: ['free', 'premium'], default: 'free' },
-  startDate: Date,
-  endDate: Date,
-  paymentMethod: String,
-  lastPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }
-},
-  // Mağaza ile ilgili ayarlar (opsiyonel)
+    isActive: { type: Boolean, default: false },
+    type: { type: String, enum: ['free', 'premium'], default: 'free' },
+    startDate: Date,
+    endDate: Date,
+    paymentMethod: String,
+    lastPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }
+  },
+  
+  // Mağaza ile ilgili ayarlar
   storeSettings: {
-    // Kullanıcının mağaza tercihlerini saklamak için
     notifications: {
       newListingComments: { type: Boolean, default: true },
       listingExpiry: { type: Boolean, default: true },
@@ -86,6 +105,18 @@ const userSchema = new mongoose.Schema({
   toObject: { getters: true }
 });
 
+// ✅ SADECE MANUEL INDEX'LER - duplicate'leri önlemek için
+// Otomatik unique index'ler zaten var, manuel eklemeye gerek yok
+
+// Arama için compound index
+userSchema.index({ firstName: 1, lastName: 1 });
+
+// Tarih bazlı sorgular için
+userSchema.index({ createdAt: -1 });
+
+// Aktif kullanıcılar için
+userSchema.index({ isActive: 1 });
+
 // Validation: Maksimum 5 link
 userSchema.pre('save', function(next) {
   if (this.profileLinks && this.profileLinks.length > 5) {
@@ -96,7 +127,7 @@ userSchema.pre('save', function(next) {
   next();
 });
 
-// Virtual field: İlan hakkı bilgilerini almak için
+// Virtual fields
 userSchema.virtual('listingRights', {
   ref: 'ListingRights',
   localField: '_id',
@@ -104,24 +135,23 @@ userSchema.virtual('listingRights', {
   justOne: true
 });
 
-// Virtual field: Kullanıcının aktif ilanları
 userSchema.virtual('activeListings', {
   ref: 'StoreListing',
   localField: '_id',
   foreignField: 'userId',
   match: { status: 'active', isActive: true }
 });
+
 userSchema.virtual('isPremium').get(function() {
   return this.subscription.isActive && 
          this.subscription.endDate && 
          new Date() < this.subscription.endDate;
 });
-// Virtual field: Tam isim
+
 userSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`.trim();
 });
 
-// Virtual field: Profil tamamlanma oranı
 userSchema.virtual('profileCompleteness').get(function() {
   let completeness = 0;
   const totalFields = 10;
@@ -135,25 +165,17 @@ userSchema.virtual('profileCompleteness').get(function() {
   if (this.profileImage !== 'image.jpg') completeness += 1;
   if (this.events && this.events.length > 0) completeness += 1;
   if (this.additionalImages && this.additionalImages.length > 0) completeness += 1;
-  if (this.storeSettings && Object.keys(this.storeSettings).length > 0) completeness += 1;
+  if (this.phone && this.phone.trim().length > 0) completeness += 1;
   
   return Math.round((completeness / totalFields) * 100);
 });
 
-// Index'ler
-userSchema.index({ username: 1 });
-userSchema.index({ email: 1 });
-userSchema.index({ firstName: 1, lastName: 1 });
-userSchema.index({ createdAt: -1 });
-userSchema.index({ isActive: 1 });
-
-// Instance method: İlan hakkı kontrolü (ayrı sorgulama gerektirir)
+// Instance methods
 userSchema.methods.checkListingRights = async function() {
   const ListingRights = mongoose.model('ListingRights');
   return await ListingRights.findOne({ userId: this._id });
 };
 
-// Instance method: Kullanıcı istatistikleri
 userSchema.methods.getStats = async function() {
   const StoreListing = mongoose.model('StoreListing');
   const ListingRights = mongoose.model('ListingRights');
@@ -175,7 +197,7 @@ userSchema.methods.getStats = async function() {
   };
 };
 
-// Static method: İlan hakkı olan kullanıcıları bulma
+// Static methods
 userSchema.statics.findUsersWithRights = async function() {
   const ListingRights = mongoose.model('ListingRights');
   const usersWithRights = await ListingRights.find({ availableRights: { $gt: 0 } })

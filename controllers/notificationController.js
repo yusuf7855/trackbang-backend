@@ -143,25 +143,28 @@ const validateFCMToken = async (req, res) => {
 const initializeFirebase = () => {
   if (admin.apps.length === 0) {
     // Environment variables kontrolü
-    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_PRIVATE_KEY) {
+    const FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCTT504svOsyVyI\nztrScU6Oy7ymZ4LDcY1WInBOr2Jgdx1yheHYtGQ3NRPQ7W9I+F1qf4LtvHcr4EWa\nw9RGPpqJxEyUvr/SLyBrcbT0/NZbkA1RckdKlliysHlFEA487meETe3hCQTe1vUr\nU7Ee7lDAmlSOwW/vuUaWCy0zb/WS/i7KTDIMDxhRO3+vtkexHdIE66QdghAYDh6t\n3BJK7IcuHTkMaTAUte12LodPpDtdiyqQb/OgTbRnidcSHFxLnkkBrJbLWzBaaqBl\npOxAmMkRnDZsZ7XORWx2cL2kqb8wzjrzlRCapX9SmQZ751/7xxvk0SYtJlCnDJkt\nWSn9nYInAgMBAAECggEAOkS8mMfYMRl5G7hOv/0HqN4X4e6Bv9Mzp8V5jPY8wJF9\nOWaRvgkktt2s1/CDG2b6dHy5ilYJAXb1sVESrzJmKGZYMGH/OCFh/n38qQc1twQU\n8Il2f59WuF+rqFDAgQOAOMomdOP/ZDG8yoWRQv3bPUQOfGUxZK5xqDoFiBoaFikR\nD+77D7kKMp+OmUDqTPg8j+axZRPRyH+5+JNgz3Igs4xXzJWtediDIRqpRtV4WPmM\nR4HLINzBKIJP89a04jIeXSXAZGTZkhXnD7xqhQuDen9tTQ3VcFjuVKQMrH2PRwKr\nlnKzXtiPpztvqr5vWHGcG8IvMppSRHVjmlyPXWKRqQKBgQDKcnWDo1mrllQvR37F\nWvEBPpBDAyh2kFRI65ZuwA99lTO2VkfeIpPswgiKlC8UmH0LJYtECqxeppnw845W\nwygDufuWuuGtpGm1GRBnTyMG0saL/5ecUQVEL0xDQBfOtw/1TWSRtATaCITdYJw5\nzJSnn6Ceb3qfiTWtB2p4gP2lcwKBgQC6R2LBBu5tI2hQcs7dKWygB0uJR0BW/xg/\nwijybcp13VGQcudSPy5JuehmhcR/nUSpfCef/Bk43ZI02DSufgOIXvJjy2ng0HSC\nXeCMKFZXBzKTUl2AJGrw1O4DHMiShnaZspIB1+JcjJk7is45dlwS03iwsj/krZ5v\nPx94egcjfQKBgQCxmt67oNgvL5AldkyiKVlb5R48nA2ojpBS9NOhz78HRpj6cxFT\nsPQjdkp2APCY2fqBh+t4wwBbfT96YsHSHh4Bvu0YXFVWt/HA3f9FEulAuDNVaOMC\nURYUroXyTc1VHcbTRpVfOhYzjdu6N2J3VqJnuCP6OwTR51b+uI3QsCFWPwKBgHMP\nnxc+Ec4GHev7Tn3blYYvm1/bTAmwnijb5HECkhlFsJj58Jqj/hJ6K+wP2nU9Dmlm\nEA/JJ0cxzZqopbnWipYUl8I+plLAUAcqt4W7cMFm572KFckONaQ20iHICLhBKEb9\nvyQ2VlL2YbwenA1wZ6UVTKpQIBk/iOqMYgMH1Rr9AoGAErfTmEfT0VDrC2JiiiHk\nsxtfpnX/HcPxhK28mUWAtkVRrLoJtsDQpSLc+vQ4Yj3H5PAh4O4MYhZoRIfTX4yu\n29DgrTCweHe9yMtchiqq4OfXs0EMl/WJ6vJSC6QtHU+IBD9NJGrBrFig+pvXsZvU\nX039Qk2RC9ClbKSTJVG5Iv0=\n-----END PRIVATE KEY-----\n"
+    const FIREBASE_PROJECT_ID="djmobilapp"
+    if (!FIREBASE_PROJECT_ID || !FIREBASE_PRIVATE_KEY) {
       console.error('❌ Firebase environment variables eksik!');
       throw new Error('Firebase yapılandırması tamamlanmamış');
     }
 
     const serviceAccount = {
       type: "service_account",
-      project_id: process.env.FIREBASE_PROJECT_ID,
-      private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
-      private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-      client_email: process.env.FIREBASE_CLIENT_EMAIL,
-      client_id: process.env.FIREBASE_CLIENT_ID,
+      project_id: FIREBASE_PROJECT_ID,
+      private_key_id: "0eee176cf16fdceca515893eac54f8b50609a1d7",
+      private_key: FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      client_email:"firebase-adminsdk-fbsvc@djmobilapp.iam.gserviceaccount.com"
+,
+      client_id: "102108716122164687663",
       auth_uri: "https://accounts.google.com/o/oauth2/auth",
       token_uri: "https://oauth2.googleapis.com/token",
       auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs"
     };
 
     console.log('🔥 Firebase Admin SDK başlatılıyor...');
-    console.log('Project ID:', process.env.FIREBASE_PROJECT_ID);
+    console.log('Project ID:', FIREBASE_PROJECT_ID);
     
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount)
@@ -481,7 +484,7 @@ const sendNotification = async (req, res) => {
       success: false,
       message: 'Bildirim gönderilemedi',
       error: error.message,
-      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      stack: 'production' === 'production' ? error.stack : undefined
     });
   }
 };

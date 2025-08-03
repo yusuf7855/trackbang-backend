@@ -378,7 +378,7 @@ exports.generateDownloadToken = async (req, res) => {
     console.log('Token created and saved:', token);
 
     // DÜZELTME: Doğru port numarasını kullan
-    const baseUrl = process.env.REACT_APP_API_BASE_URL || 'https://trackbangserver.com.tr';
+    const baseUrl =  'https://trackbangserver.com.tr';
     
     const response = {
       token: token,

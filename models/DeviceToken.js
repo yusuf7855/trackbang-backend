@@ -1,3 +1,5 @@
+// models/DeviceToken.js - Index duplicatelerinden temizlenmiş
+
 const mongoose = require('mongoose');
 
 const deviceTokenSchema = new mongoose.Schema({
@@ -9,7 +11,7 @@ const deviceTokenSchema = new mongoose.Schema({
   fcmToken: {
     type: String,
     required: true,
-    unique: true
+    unique: true  // Bu otomatik index oluşturur, ayrıca tanımlamaya gerek yok
   },
   platform: {
     type: String,
@@ -78,11 +80,19 @@ const deviceTokenSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexler
+// ✅ SADECE MANUEL INDEX'LER - duplicate'leri önlemek için
+// fcmToken zaten unique: true ile otomatik index'e sahip
+
+// Kullanıcı bazlı sorgular için
 deviceTokenSchema.index({ userId: 1 });
-deviceTokenSchema.index({ fcmToken: 1 }, { unique: true });
+
+// Aktif cihazlar için
 deviceTokenSchema.index({ isActive: 1 });
+
+// Platform bazlı sorgular için
 deviceTokenSchema.index({ platform: 1 });
+
+// Son aktivite tarihi için
 deviceTokenSchema.index({ lastActiveAt: -1 });
 
 module.exports = mongoose.model('DeviceToken', deviceTokenSchema);

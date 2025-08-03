@@ -1,321 +1,276 @@
-// models/StoreListing.js - GÜNCELLENMİŞ VERSİYON - İl/İlçe ve Konum Desteği
+// models/StoreListing.js - Index duplicate sorunu düzeltilmiş
 
 const mongoose = require('mongoose');
 
 const storeListingSchema = new mongoose.Schema({
-  listingNumber: {
-    type: String,
-    unique: true,
-    required: true
-  },
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
+    // unique: true kaldırıldı - bir kullanıcının birden çok ilanı olabilir
+    // Manuel index aşağıda tanımlanacak
   },
+  
+  listingNumber: {
+    type: String,
+    unique: true,  // Bu otomatik index oluşturur
+    required: true
+    // Manuel index tanımlamaya gerek yok
+  },
+  
   title: {
     type: String,
     required: true,
-    maxlength: 200,
-    trim: true
+    trim: true,
+    maxlength: 100
   },
+  
+  description: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 1000
+  },
+  
   category: {
     type: String,
     required: true,
-  enum: [
-      'ses-kartlari',
-      'monitorler',
-      'midi-klavyeler',
-      'kayit-setleri',
-      'produksiyon-bilgisayarlari',
-      'dj-ekipmanlari',
-      'produksiyon-kontrol-cihazlari',
-      'gaming-podcast-ekipmanlari',
-      'mikrofonlar',
-      'kulakliklar',
-      'studyo-dj-ekipmanlari',
-      'kablolar',
-      'arabirimler',
-      'kayit-cihazlari',
-      'pre-amfiler-efektler',
-      'yazilimlar'
+    enum: [
+      'Elektronik',
+      'Müzik Enstrümanları', 
+      'DJ Ekipmanları',
+      'Ses Sistemleri',
+      'Yazılım',
+      'Aksesuarlar',
+      'Diğer'
     ]
   },
+  
   price: {
     type: Number,
     required: true,
     min: 0
   },
+  
   currency: {
     type: String,
-    default: 'TL'
+    default: 'TRY',
+    enum: ['TRY', 'USD', 'EUR']
   },
-  description: {
+  
+  condition: {
     type: String,
     required: true,
-    maxlength: 2000,
-    trim: true
+    enum: ['Yeni', 'Az Kullanılmış', 'İyi Durumda', 'Orta Durumda', 'Tamir Gerekir']
   },
-  phoneNumber: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  // YENİ - Konum bilgileri
+  
   location: {
-    province: {
+    city: {
       type: String,
-      required: true,
-      trim: true
+      required: true
     },
     district: {
       type: String,
-      required: true,
-      trim: true
+      required: false
     },
-    // Google Maps için koordinatlar (opsiyonel - gelecekte kullanılabilir)
-    coordinates: {
-      latitude: {
-        type: Number,
-        min: -90,
-        max: 90
-      },
-      longitude: {
-        type: Number,
-        min: -180,
-        max: 180
-      }
-    },
-    // Tam adres (opsiyonel)
-    fullAddress: {
+    address: {
       type: String,
-      trim: true
+      required: false
     }
   },
+  
+  contact: {
+    phone: {
+      type: String,
+      required: false
+    },
+    email: {
+      type: String,
+      required: false
+    },
+    whatsapp: {
+      type: String,
+      required: false
+    },
+    preferredContact: {
+      type: String,
+      enum: ['phone', 'email', 'whatsapp', 'message'],
+      default: 'message'
+    }
+  },
+  
   images: [{
     filename: {
       type: String,
       required: true
     },
-    originalName: String,
-    size: Number,
-    mimetype: String,
+    originalName: {
+      type: String,
+      required: true
+    },
     uploadDate: {
       type: Date,
       default: Date.now
+    },
+    size: {
+      type: Number
     }
   }],
+  
+  specifications: {
+    brand: String,
+    model: String,
+    year: Number,
+    warranty: {
+      exists: { type: Boolean, default: false },
+      duration: String,
+      type: String
+    }
+  },
+  
   status: {
     type: String,
-    enum: ['active', 'inactive', 'expired', 'sold', 'pending'],
+    enum: ['active', 'sold', 'reserved', 'expired', 'paused'],
     default: 'active'
   },
+  
   isActive: {
     type: Boolean,
     default: true
   },
-  paymentStatus: {
-    type: String,
-    enum: ['paid', 'unpaid', 'expired'],
-    default: 'paid'
+  
+  featured: {
+    type: Boolean,
+    default: false
   },
-  expiryDate: {
-    type: Date,
-    required: true,
-    default: function() {
-      return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days from now
-    }
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  },
-  viewCount: {
+  
+  views: {
     type: Number,
     default: 0
   },
+  
   contactCount: {
     type: Number,
     default: 0
+  },
+  
+  expiresAt: {
+    type: Date,
+    default: function() {
+      return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 gün sonra
+    }
+  },
+  
+  tags: [String],
+  
+  isPromoted: {
+    type: Boolean,
+    default: false
+  },
+  
+  promotionExpiry: {
+    type: Date
   }
-}, { 
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
+  
+}, {
+  timestamps: true
 });
 
-// Pre-save middleware
-storeListingSchema.pre('save', function(next) {
-  // Generate listing number if not exists
-  if (!this.listingNumber) {
-    const timestamp = Date.now().toString().slice(-6);
-    const random = Math.random().toString(36).substr(2, 4).toUpperCase();
-    this.listingNumber = `IL${timestamp}${random}`;
-  }
-  
-  // Update timestamps
-  this.updatedAt = new Date();
-  
-  // Check if expired
-  if (this.expiryDate < new Date()) {
-    this.status = 'expired';
-    this.isActive = false;
-  }
-  
-  next();
+// ✅ SADECE MANUEL INDEX'LER - duplicate'leri önlemek için
+// listingNumber zaten unique: true ile otomatik index'e sahip
+// userId için manuel index (unique değil - bir user'ın birden çok ilanı olabilir)
+
+// Kullanıcı ilanları için
+storeListingSchema.index({ userId: 1, status: 1 });
+
+// Aktif ilanlar için
+storeListingSchema.index({ isActive: 1, status: 1 });
+
+// Kategori bazlı arama için
+storeListingSchema.index({ category: 1, isActive: 1 });
+
+// Fiyat aralığı sorguları için
+storeListingSchema.index({ price: 1, currency: 1 });
+
+// Lokasyon bazlı arama için
+storeListingSchema.index({ 'location.city': 1 });
+
+// Son eklenen ilanlar için
+storeListingSchema.index({ createdAt: -1 });
+
+// Öne çıkan ilanlar için
+storeListingSchema.index({ featured: 1, isActive: 1 });
+
+// Süre kontrolü için
+storeListingSchema.index({ expiresAt: 1, isActive: 1 });
+
+// Arama için text index
+storeListingSchema.index({ 
+  title: 'text', 
+  description: 'text',
+  'specifications.brand': 'text',
+  'specifications.model': 'text'
 });
 
-// Virtual for remaining days
-storeListingSchema.virtual('remainingDays').get(function() {
-  if (!this.expiryDate) return 0;
-  const diffTime = this.expiryDate - new Date();
+// Virtual fields
+storeListingSchema.virtual('isExpired').get(function() {
+  return new Date() > this.expiresAt;
+});
+
+storeListingSchema.virtual('daysRemaining').get(function() {
+  const now = new Date();
+  const expiry = new Date(this.expiresAt);
+  const diffTime = expiry - now;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   return diffDays > 0 ? diffDays : 0;
 });
 
-// Virtual for image URLs
-storeListingSchema.virtual('imageUrls').get(function() {
-  return this.images.map(img => `/uploads/store-listings/${img.filename}`);
+storeListingSchema.virtual('mainImage').get(function() {
+  return this.images && this.images.length > 0 ? this.images[0] : null;
 });
-
-// Virtual for location display
-storeListingSchema.virtual('locationDisplay').get(function() {
-  if (this.location && this.location.province && this.location.district) {
-    return `${this.location.district}, ${this.location.province}`;
-  }
-  return '';
-});
-
-// Static methods - YENİ konum filtresi eklendi
-storeListingSchema.statics.getActiveListings = function(options = {}) {
-  const query = {
-    status: 'active',
-    isActive: true,
-    expiryDate: { $gt: new Date() }
-  };
-  
-  if (options.category && options.category !== 'Tümü') {
-    query.category = options.category;
-  }
-  
-  if (options.province) {
-    query['location.province'] = options.province;
-  }
-  
-  if (options.district) {
-    query['location.district'] = options.district;
-  }
-  
-  if (options.priceMin || options.priceMax) {
-    query.price = {};
-    if (options.priceMin) query.price.$gte = options.priceMin;
-    if (options.priceMax) query.price.$lte = options.priceMax;
-  }
-  
-  let queryBuilder = this.find(query)
-    .populate('userId', 'username firstName lastName profileImage');
-  
-  // Sorting
-  switch (options.sort) {
-    case 'price_asc':
-      queryBuilder = queryBuilder.sort({ price: 1 });
-      break;
-    case 'price_desc':
-      queryBuilder = queryBuilder.sort({ price: -1 });
-      break;
-    case 'date_asc':
-      queryBuilder = queryBuilder.sort({ createdAt: 1 });
-      break;
-    default:
-      queryBuilder = queryBuilder.sort({ createdAt: -1 });
-  }
-  
-  return queryBuilder;
-};
-
-storeListingSchema.statics.searchListings = function(searchQuery, options = {}) {
-  const query = {
-    $and: [
-      { status: 'active' },
-      { isActive: true },
-      { expiryDate: { $gt: new Date() } },
-      {
-        $or: [
-          { title: { $regex: searchQuery, $options: 'i' } },
-          { description: { $regex: searchQuery, $options: 'i' } },
-          { listingNumber: { $regex: searchQuery, $options: 'i' } },
-          { 'location.province': { $regex: searchQuery, $options: 'i' } },
-          { 'location.district': { $regex: searchQuery, $options: 'i' } }
-        ]
-      }
-    ]
-  };
-  
-  if (options.category && options.category !== 'Tümü') {
-    query.$and.push({ category: options.category });
-  }
-  
-  return this.find(query)
-    .populate('userId', 'username firstName lastName profileImage')
-    .sort({ createdAt: -1 });
-};
 
 // Instance methods
-storeListingSchema.methods.incrementViews = function() {
-  this.viewCount += 1;
+storeListingSchema.methods.incrementView = function() {
+  this.views += 1;
   return this.save();
 };
 
-storeListingSchema.methods.incrementContactCount = function() {
+storeListingSchema.methods.incrementContact = function() {
   this.contactCount += 1;
   return this.save();
 };
 
-storeListingSchema.methods.renewListing = function() {
-  this.status = 'active';
-  this.isActive = true;
-  this.paymentStatus = 'paid';
-  this.expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-  return this.save();
+storeListingSchema.methods.getImageUrls = function(baseUrl = '') {
+  return this.images.map(img => `${baseUrl}/uploads/store-listings/${img.filename}`);
 };
 
-storeListingSchema.methods.deactivate = function() {
-  this.status = 'inactive';
-  this.isActive = false;
-  return this.save();
+// Static methods
+storeListingSchema.statics.findActiveListings = function(filter = {}) {
+  return this.find({
+    ...filter,
+    isActive: true,
+    status: 'active',
+    expiresAt: { $gt: new Date() }
+  }).sort({ createdAt: -1 });
 };
 
-// Indexes
-storeListingSchema.index({ listingNumber: 1 }, { unique: true });
-storeListingSchema.index({ userId: 1 });
-storeListingSchema.index({ category: 1 });
-storeListingSchema.index({ status: 1, isActive: 1 });
-storeListingSchema.index({ createdAt: -1 });
-storeListingSchema.index({ expiryDate: 1 });
-storeListingSchema.index({ price: 1 });
-storeListingSchema.index({ 'location.province': 1 });
-storeListingSchema.index({ 'location.district': 1 });
+storeListingSchema.statics.findByCategory = function(category) {
+  return this.findActiveListings({ category });
+};
 
-// Text search index - YENİ konum alanları eklendi
-storeListingSchema.index({
-  title: 'text',
-  description: 'text',
-  listingNumber: 'text',
-  'location.province': 'text',
-  'location.district': 'text'
-}, {
-  name: 'listing_search_index',
-  weights: {
-    title: 3,
-    listingNumber: 2,
-    'location.province': 2,
-    'location.district': 2,
-    description: 1
+storeListingSchema.statics.findByUser = function(userId) {
+  return this.find({ userId }).sort({ createdAt: -1 });
+};
+
+// Middleware
+storeListingSchema.pre('save', function(next) {
+  if (this.isNew) {
+    // Yeni ilan için otomatik listingNumber oluştur
+    if (!this.listingNumber) {
+      this.listingNumber = `LST${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    }
   }
+  next();
 });
 
 module.exports = mongoose.model('StoreListing', storeListingSchema);

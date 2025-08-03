@@ -4,7 +4,7 @@ const DownloadToken = require('../models/DownloadToken');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL;
+const apiBaseUrl = "https://trackbangserver.com.tr"
 
 // Tek seferlik token oluşturma (test amaçlı örnek)
 router.post('/generate', async (req, res) => {

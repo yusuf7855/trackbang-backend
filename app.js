@@ -89,15 +89,21 @@ app.use('/assets', express.static(assetsPath, {
 // ============ ANA SAYFA - SERVER DURUMU ============
 
 app.get('/', (req, res) => {
+  const uptime = process.uptime();
+  const uptimeHours = Math.floor(uptime / 3600);
+  const uptimeMinutes = Math.floor((uptime % 3600) / 60);
+  const uptimeSeconds = Math.floor(uptime % 60);
+  const uptimeFormatted = `${uptimeHours}s ${uptimeMinutes}d ${uptimeSeconds}s`;
+
   const serverInfo = {
     status: 'active',
     message: 'Server çalışıyor! 🚀',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    uptimeFormatted: `${Math.floor(process.uptime() / 3600)}s ${Math.floor((process.uptime() % 3600) / 60)}d ${Math.floor(process.uptime() % 60)}s`,
-    environment: process.env.NODE_ENV || 'development',
+    uptime: uptime,
+    uptimeFormatted: uptimeFormatted,
+    environment: 'production',
     nodeVersion: process.version,
-    port: process.env.PORT || 5000,
+    port: 5000,
     database: {
       connected: mongoose.connection.readyState === 1,
       status: mongoose.connection.readyState === 1 ? 'Bağlı' : 'Bağlantısız',
@@ -341,7 +347,7 @@ app.get('/health', (req, res) => {
       connected: mongoose.connection.readyState === 1,
       readyState: mongoose.connection.readyState
     },
-    environment: process.env.NODE_ENV || 'development'
+    environment: 'production'
   };
   
   const statusCode = mongoose.connection.readyState === 1 ? 200 : 503;
@@ -513,14 +519,14 @@ console.log('✅ API Routes yüklendi');
 async function connectToMongoDB() {
   try {
     console.log('🔄 MongoDB\'ye bağlanılıyor...');
-    
-    if (!process.env.MONGO_URI) {
+    const MONGO_URI = "mongodb+srv://221118047:9KY5zsMHQRJyEwGq@cluster0.rz2m5a4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+
+    if (!MONGO_URI) {
       throw new Error('MONGO_URI environment variable not found!');
     }
     
+    // Deprecated seçenekleri kaldır
     const mongooseOptions = {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 30000,
       connectTimeoutMS: 30000,
       socketTimeoutMS: 30000,
@@ -530,7 +536,7 @@ async function connectToMongoDB() {
       family: 4
     };
     
-    await mongoose.connect(process.env.MONGO_URI, mongooseOptions);
+    await mongoose.connect(MONGO_URI, mongooseOptions);
     
     console.log('✅ MongoDB bağlantısı başarılı!');
     console.log('📊 Database:', mongoose.connection.name || 'default');
@@ -572,16 +578,23 @@ app.use((error, req, res, next) => {
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
+    error: process.env.NODE_ENV === 'production' ? error.message : 'Something went wrong'
   });
 });
 
 // ============ SERVER START ============
 
 const PORT = process.env.PORT || 5000;
+let server; // Server instance'ını track et
 
 async function startServer() {
   try {
+    // Eğer server zaten çalışıyorsa tekrar başlatma
+    if (server && server.listening) {
+      console.log('⚠️ Server zaten çalışıyor!');
+      return;
+    }
+
     // MongoDB bağlantısını kur
     const dbConnected = await connectToMongoDB();
     
@@ -590,10 +603,11 @@ async function startServer() {
     }
     
     // Server'ı başlat
-    const server = app.listen(PORT, '0.0.0.0', () => {
+    server = app.listen(PORT, '0.0.0.0', () => {
       console.log('');
       console.log('🎉 =================================');
-      console.log('🚀 SERVER BAŞARILI BİR ŞEKİLDE BAŞLADI!');
+      console.log(`🚀 SERVER ${PORT} PORTUNDA ÇALIŞIYOR!`);
+      console.log(`🌐 URL: http://localhost:${PORT}`);
       console.log('🎉 =================================');
     });
     
@@ -616,30 +630,54 @@ async function startServer() {
 // Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n📱 Server kapatılıyor...');
-  mongoose.connection.close(() => {
-    console.log('🔐 MongoDB bağlantısı kapatıldı');
+  if (server) {
+    server.close(() => {
+      mongoose.connection.close(() => {
+        console.log('🔐 MongoDB bağlantısı kapatıldı');
+        process.exit(0);
+      });
+    });
+  } else {
     process.exit(0);
-  });
+  }
 });
 
 process.on('SIGTERM', () => {
   console.log('\n📱 Server sonlandırılıyor...');
-  mongoose.connection.close(() => {
-    console.log('🔐 MongoDB bağlantısı kapatıldı');
+  if (server) {
+    server.close(() => {
+      mongoose.connection.close(() => {
+        console.log('🔐 MongoDB bağlantısı kapatıldı');
+        process.exit(0);
+      });
+    });
+  } else {
     process.exit(0);
-  });
+  }
 });
 
 // Unhandled promise rejection
 process.on('unhandledRejection', (err) => {
   console.error('💥 Unhandled Promise Rejection:', err.message);
-  process.exit(1);
+  if (server) {
+    server.close(() => {
+      process.exit(1);
+    });
+  } else {
+    process.exit(1);
+  }
 });
 
 // Uncaught exception
 process.on('uncaughtException', (err) => {
   console.error('💥 Uncaught Exception:', err.message);
-  process.exit(1);
+  if (server) {
+    server.close(() => {
+      process.exit(1);
+    });
+  } else {
+    process.exit(1);
+  }
 });
 
 // Server'ı başlat

@@ -262,7 +262,7 @@ router.use((error, req, res, next) => {
   res.status(500).json({
     success: false,
     message: 'Dosya yükleme hatası',
-    error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    error: 'production' === 'production' ? error.message : 'Internal server error'
   });
 });
 
