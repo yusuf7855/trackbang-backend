@@ -1,121 +1,145 @@
-// models/Message.js
+// models/Message.js - Duplicate index sorunu çözülmüş
+
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
   senderId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    index: true
+    required: true
+    // ⚠️ index: true KALDIRILDI - Duplicate hatası önlendi
   },
   recipientId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true,
-    index: true
+    required: true
+    // ⚠️ index: true KALDIRILDI - Duplicate hatası önlendi
   },
   message: {
     type: String,
-    required: true,
-    trim: true,
-    maxlength: 1000 // Mesaj uzunluğu sınırı
+    required: function() {
+      return this.messageType === 'text';
+    },
+    maxlength: 1000
   },
   messageType: {
     type: String,
-    enum: ['text', 'image', 'audio', 'file'],
+    enum: ['text', 'image', 'audio', 'file', 'listing'],
     default: 'text'
   },
+  
   // Medya dosyaları için
-  mediaUrl: {
-    type: String,
-    default: null
+  media: {
+    filename: String,
+    originalName: String,
+    mimeType: String,
+    size: Number,
+    url: String
   },
-  mediaType: {
-    type: String,
-    default: null
+  
+  // İlan paylaşımı için
+  sharedListing: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StoreListing'
   },
-  mediaSize: {
-    type: Number,
-    default: null
-  },
+  
+  // Mesaj durumu
   isRead: {
     type: Boolean,
-    default: false,
-    index: true
+    default: false
   },
   readAt: {
-    type: Date,
-    default: null
+    type: Date
   },
   isDeleted: {
     type: Boolean,
     default: false
   },
   deletedAt: {
-    type: Date,
-    default: null
+    type: Date
   },
-  // Mesajın gönderilme durumu
-  deliveryStatus: {
-    type: String,
-    enum: ['sending', 'sent', 'delivered', 'failed'],
-    default: 'sent'
+  deletedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
-  // Mesaj yanıtlama özelliği için
+  
+  // Yanıtlama özelliği
   replyTo: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Message',
-    default: null
+    ref: 'Message'
   },
-  // Forward edilen mesajlar için
-  forwardedFrom: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Message',
-    default: null
-  },
-  // Mesaj düzenleme geçmişi
-  editHistory: [{
-    originalMessage: String,
-    editedAt: { type: Date, default: Date.now }
-  }],
+  
+  // Düzenleme özellikleri
   isEdited: {
     type: Boolean,
     default: false
+  },
+  editedAt: {
+    type: Date
+  },
+  originalMessage: {
+    type: String
   }
 }, {
-  timestamps: true, // createdAt ve updatedAt otomatik eklenir
+  timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Indexler - Performans için çok önemli
+// ============ MANUEL INDEX'LER - DUPLICATE ÖNLENMIŞ ============
+// ⚠️ senderId ve recipientId için index: true kaldırıldı
+
+// En önemli compound index - konuşma sorguları için
 messageSchema.index({ senderId: 1, recipientId: 1, createdAt: -1 });
+
+// Okunmamış mesajlar için
 messageSchema.index({ recipientId: 1, isRead: 1 });
+
+// Genel mesaj listesi için
 messageSchema.index({ createdAt: -1 });
-messageSchema.index({ 
-  senderId: 1, 
-  recipientId: 1, 
-  isDeleted: 1 
+
+// Silinen mesajları filtrelemek için
+messageSchema.index({ senderId: 1, recipientId: 1, isDeleted: 1 });
+
+// Medya mesajları için
+messageSchema.index({ messageType: 1, createdAt: -1 });
+
+// ============ VIRTUAL FIELDS ============
+messageSchema.virtual('isFromSender').get(function() {
+  // Bu field'i populate edildikten sonra set etmek gerekiyor
+  return this._isFromSender || false;
 });
 
-// Mesaj gönderilmeden önce validasyon
-messageSchema.pre('save', function(next) {
-  // Kendi kendine mesaj göndermeyi engelle
-  if (this.senderId.toString() === this.recipientId.toString()) {
-    const error = new Error('Kendinize mesaj gönderemezsiniz');
-    return next(error);
+// ============ INSTANCE METHODS ============
+messageSchema.methods.markAsRead = function() {
+  if (!this.isRead) {
+    this.isRead = true;
+    this.readAt = new Date();
+    return this.save();
   }
-  
-  // Boş mesaj kontrolü
-  if (this.messageType === 'text' && (!this.message || this.message.trim() === '')) {
-    const error = new Error('Mesaj boş olamaz');
-    return next(error);
-  }
-  
-  next();
-});
+  return Promise.resolve(this);
+};
 
-// Statik metodlar - Sık kullanılan sorgular için
+messageSchema.methods.softDelete = function(deletedByUserId) {
+  this.isDeleted = true;
+  this.deletedAt = new Date();
+  this.deletedBy = deletedByUserId;
+  return this.save();
+};
+
+messageSchema.methods.editMessage = function(newMessage) {
+  if (this.messageType !== 'text') {
+    throw new Error('Sadece metin mesajları düzenlenebilir');
+  }
+  
+  this.originalMessage = this.message;
+  this.message = newMessage;
+  this.isEdited = true;
+  this.editedAt = new Date();
+  return this.save();
+};
+
+// ============ STATIC METHODS ============
 messageSchema.statics.getConversation = function(userId1, userId2, limit = 50, skip = 0) {
   return this.find({
     $or: [
@@ -127,6 +151,7 @@ messageSchema.statics.getConversation = function(userId1, userId2, limit = 50, s
   .populate('senderId', 'firstName lastName username profileImage')
   .populate('recipientId', 'firstName lastName username profileImage')
   .populate('replyTo', 'message senderId')
+  .populate('sharedListing', 'title price images')
   .sort({ createdAt: -1 })
   .limit(limit)
   .skip(skip);
@@ -222,62 +247,38 @@ messageSchema.statics.getConversationList = function(userId) {
   ]);
 };
 
-// Instance metodlar
-messageSchema.methods.markAsRead = function() {
-  this.isRead = true;
-  this.readAt = new Date();
-  return this.save();
+messageSchema.statics.searchMessages = function(userId, searchTerm, limit = 20) {
+  return this.find({
+    $or: [
+      { senderId: userId },
+      { recipientId: userId }
+    ],
+    message: { $regex: searchTerm, $options: 'i' },
+    messageType: 'text',
+    isDeleted: false
+  })
+  .populate('senderId', 'firstName lastName username profileImage')
+  .populate('recipientId', 'firstName lastName username profileImage')
+  .sort({ createdAt: -1 })
+  .limit(limit);
 };
 
-messageSchema.methods.softDelete = function() {
-  this.isDeleted = true;
-  this.deletedAt = new Date();
-  return this.save();
-};
-
-messageSchema.methods.editMessage = function(newMessage) {
-  // Orijinal mesajı edit history'ye ekle
-  if (!this.isEdited) {
-    this.editHistory.push({
-      originalMessage: this.message
-    });
+// ============ PRE/POST HOOKS ============
+// Mesaj gönderilmeden önce validasyon
+messageSchema.pre('save', function(next) {
+  // Kendi kendine mesaj göndermeyi engelle
+  if (this.senderId.toString() === this.recipientId.toString()) {
+    const error = new Error('Kendinize mesaj gönderemezsiniz');
+    return next(error);
   }
   
-  this.message = newMessage;
-  this.isEdited = true;
-  return this.save();
-};
-
-// Virtual alanlar
-messageSchema.virtual('isRecent').get(function() {
-  const now = new Date();
-  const messageTime = this.createdAt;
-  const diffInMinutes = (now - messageTime) / (1000 * 60);
-  return diffInMinutes < 30; // Son 30 dakika içinde
-});
-
-messageSchema.virtual('timeAgo').get(function() {
-  const now = new Date();
-  const messageTime = this.createdAt;
-  const diffInMs = now - messageTime;
-  const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  const diffInDays = Math.floor(diffInHours / 24);
-
-  if (diffInMinutes < 1) return 'şimdi';
-  if (diffInMinutes < 60) return `${diffInMinutes}d önce`;
-  if (diffInHours < 24) return `${diffInHours}s önce`;
-  if (diffInDays < 7) return `${diffInDays} gün önce`;
+  // Boş mesaj kontrolü
+  if (this.messageType === 'text' && (!this.message || this.message.trim() === '')) {
+    const error = new Error('Mesaj boş olamaz');
+    return next(error);
+  }
   
-  return this.createdAt.toLocaleDateString('tr-TR');
+  next();
 });
 
-// Konuşma ID'si - iki kullanıcı arasındaki benzersiz tanımlayıcı
-messageSchema.virtual('conversationId').get(function() {
-  const ids = [this.senderId.toString(), this.recipientId.toString()].sort();
-  return ids.join('_');
-});
-
-const Message = mongoose.model('Message', messageSchema);
-
-module.exports = Message;
+module.exports = mongoose.model('Message', messageSchema);

@@ -1,4 +1,4 @@
-// models/userModel.js - Index duplicatelerinden temizlenmiş versiyon
+// models/userModel.js - Duplicate index sorunu çözülmüş versiyon
 
 const mongoose = require('mongoose');
 
@@ -6,18 +6,17 @@ const userSchema = new mongoose.Schema({
   username: { 
     type: String, 
     required: true, 
-    unique: true  // Bu yeterli, ayrıca index tanımlamaya gerek yok
+    unique: true  // ✅ Bu otomatik index oluşturur
   },
   email: { 
     type: String, 
     required: true, 
-    unique: true  // Bu yeterli, ayrıca index tanımlamaya gerek yok
+    unique: true  // ✅ Bu otomatik index oluşturur
   },
   password: { type: String, required: true },
   firstName: { type: String, required: true },
   lastName: { type: String, required: true },
   
-  // Phone alan opsiyonel - düzeltilmiş
   phone: { 
     type: String, 
     required: false,
@@ -37,17 +36,18 @@ const userSchema = new mongoose.Schema({
     get: (value) => value === 'image.jpg' ? '/assets/default-profile.jpg' : `/uploads/${value}`
   },
   
-  // Profil alanları
   bio: { 
     type: String, 
     default: '',
     maxlength: 300
   },
+  
   profileLinks: [{
     title: { type: String, required: true, maxlength: 50 },
     url: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
   }],
+  
   events: [{
     date: { type: Date, required: true },
     time: { type: String, required: true },
@@ -55,20 +55,18 @@ const userSchema = new mongoose.Schema({
     venue: { type: String, required: true },
     createdAt: { type: Date, default: Date.now }
   }],
+  
   additionalImages: [{
     filename: { type: String, required: true },
     uploadDate: { type: Date, default: Date.now }
   }],
   
-  // Sosyal özellikler
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   
-  // Şifre sıfırlama
   resetToken: String,
   resetTokenExpire: Date,
   
-  // Hesap durumu
   isActive: { 
     type: Boolean, 
     default: true 
@@ -86,136 +84,136 @@ const userSchema = new mongoose.Schema({
     lastPaymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' }
   },
   
-  // Mağaza ile ilgili ayarlar
   storeSettings: {
     notifications: {
       newListingComments: { type: Boolean, default: true },
-      listingExpiry: { type: Boolean, default: true },
-      purchaseConfirmations: { type: Boolean, default: true }
+      listingExpiration: { type: Boolean, default: true },
+      newFollower: { type: Boolean, default: true },
+      directMessage: { type: Boolean, default: true }
     },
     privacy: {
-      showPhone: { type: Boolean, default: true },
       showEmail: { type: Boolean, default: false },
-      allowDirectMessages: { type: Boolean, default: true }
+      showPhone: { type: Boolean, default: false },
+      allowMessages: { type: Boolean, default: true }
     }
   }
-}, { 
+}, {
   timestamps: true,
-  toJSON: { getters: true },
-  toObject: { getters: true }
+  toJSON: { virtuals: true, getters: true },
+  toObject: { virtuals: true, getters: true }
 });
 
-// ✅ SADECE MANUEL INDEX'LER - duplicate'leri önlemek için
-// Otomatik unique index'ler zaten var, manuel eklemeye gerek yok
+// ============ MANUEL INDEX'LER - SADECE GEREKLİ OLANLAR ============
+// ⚠️ username ve email zaten unique: true ile otomatik index'e sahip
+// ⚠️ _id zaten otomatik index'e sahip
 
 // Arama için compound index
-userSchema.index({ firstName: 1, lastName: 1 });
-
-// Tarih bazlı sorgular için
-userSchema.index({ createdAt: -1 });
+userSchema.index({ 
+  firstName: 'text', 
+  lastName: 'text', 
+  username: 'text' 
+}, {
+  name: 'user_search_index',
+  weights: { username: 3, firstName: 2, lastName: 2 }
+});
 
 // Aktif kullanıcılar için
 userSchema.index({ isActive: 1 });
 
-// Validation: Maksimum 5 link
-userSchema.pre('save', function(next) {
-  if (this.profileLinks && this.profileLinks.length > 5) {
-    const error = new Error('Maksimum 5 link ekleyebilirsiniz');
-    error.name = 'ValidationError';
-    return next(error);
-  }
-  next();
-});
+// Son login tarihi için (performans)
+userSchema.index({ lastLoginAt: -1 });
 
-// Virtual fields
-userSchema.virtual('listingRights', {
-  ref: 'ListingRights',
-  localField: '_id',
-  foreignField: 'userId',
-  justOne: true
-});
+// Subscription sorguları için
+userSchema.index({ 'subscription.isActive': 1, 'subscription.type': 1 });
 
-userSchema.virtual('activeListings', {
-  ref: 'StoreListing',
-  localField: '_id',
-  foreignField: 'userId',
-  match: { status: 'active', isActive: true }
-});
-
-userSchema.virtual('isPremium').get(function() {
-  return this.subscription.isActive && 
-         this.subscription.endDate && 
-         new Date() < this.subscription.endDate;
-});
-
+// ============ VIRTUAL FIELDS ============
 userSchema.virtual('fullName').get(function() {
-  return `${this.firstName} ${this.lastName}`.trim();
+  return `${this.firstName} ${this.lastName}`;
 });
 
-userSchema.virtual('profileCompleteness').get(function() {
-  let completeness = 0;
-  const totalFields = 10;
-  
-  // Zorunlu alanlar zaten var (40%)
-  completeness += 4;
-  
-  // Opsiyonel alanlar
-  if (this.bio && this.bio.trim().length > 0) completeness += 1;
-  if (this.profileLinks && this.profileLinks.length > 0) completeness += 1;
-  if (this.profileImage !== 'image.jpg') completeness += 1;
-  if (this.events && this.events.length > 0) completeness += 1;
-  if (this.additionalImages && this.additionalImages.length > 0) completeness += 1;
-  if (this.phone && this.phone.trim().length > 0) completeness += 1;
-  
-  return Math.round((completeness / totalFields) * 100);
+userSchema.virtual('followersCount').get(function() {
+  return this.followers ? this.followers.length : 0;
 });
 
-// Instance methods
-userSchema.methods.checkListingRights = async function() {
-  const ListingRights = mongoose.model('ListingRights');
-  return await ListingRights.findOne({ userId: this._id });
-};
+userSchema.virtual('followingCount').get(function() {
+  return this.following ? this.following.length : 0;
+});
 
-userSchema.methods.getStats = async function() {
-  const StoreListing = mongoose.model('StoreListing');
-  const ListingRights = mongoose.model('ListingRights');
-  
-  const [activeListings, totalListings, rights] = await Promise.all([
-    StoreListing.countDocuments({ userId: this._id, status: 'active', isActive: true }),
-    StoreListing.countDocuments({ userId: this._id }),
-    ListingRights.findOne({ userId: this._id })
-  ]);
-  
+// ============ INSTANCE METHODS ============
+userSchema.methods.getPublicProfile = function() {
   return {
-    activeListings,
-    totalListings,
-    availableRights: rights ? rights.availableRights : 0,
-    totalRights: rights ? rights.totalRights : 0,
-    usedRights: rights ? rights.usedRights : 0,
-    followersCount: this.followers ? this.followers.length : 0,
-    followingCount: this.following ? this.following.length : 0
+    _id: this._id,
+    username: this.username,
+    firstName: this.firstName,
+    lastName: this.lastName,
+    fullName: this.fullName,
+    profileImage: this.profileImage,
+    bio: this.bio,
+    profileLinks: this.profileLinks,
+    events: this.events,
+    followersCount: this.followersCount,
+    followingCount: this.followingCount,
+    isActive: this.isActive,
+    createdAt: this.createdAt
   };
 };
 
-// Static methods
-userSchema.statics.findUsersWithRights = async function() {
-  const ListingRights = mongoose.model('ListingRights');
-  const usersWithRights = await ListingRights.find({ availableRights: { $gt: 0 } })
-    .populate('userId', 'username email firstName lastName')
-    .lean();
-  
-  return usersWithRights.map(rights => ({
-    ...rights.userId,
-    availableRights: rights.availableRights
-  }));
-};
-
-// JSON transformation - hassas bilgileri gizle
-userSchema.methods.toJSON = function() {
+userSchema.methods.toProfileJSON = function() {
   const userObject = this.toObject();
+  
+  // Hassas bilgileri kaldır
   delete userObject.password;
   delete userObject.resetToken;
   delete userObject.resetTokenExpire;
+  delete userObject.email; // Profilde email gösterme
+  
+  return userObject;
+};
+
+// ============ STATIC METHODS ============
+userSchema.statics.findUsersWithRights = async function() {
+  try {
+    const ListingRights = mongoose.model('ListingRights');
+    const usersWithRights = await ListingRights.find({ 
+      availableRights: { $gt: 0 } 
+    })
+    .populate('userId', 'username email firstName lastName')
+    .lean();
+    
+    return usersWithRights.map(rights => ({
+      ...rights.userId,
+      availableRights: rights.availableRights
+    }));
+  } catch (error) {
+    console.error('Error finding users with rights:', error);
+    return [];
+  }
+};
+
+userSchema.statics.searchByName = async function(searchTerm) {
+  if (!searchTerm || searchTerm.trim() === '') return [];
+  
+  return this.find({
+    $text: { $search: searchTerm },
+    isActive: true
+  })
+  .select('username firstName lastName profileImage bio')
+  .limit(20)
+  .lean();
+};
+
+// ============ PRE/POST HOOKS ============
+// Şifre hash'leme middleware'i burada olacak (bcrypt ile)
+
+// ============ JSON TRANSFORMATION ============
+userSchema.methods.toJSON = function() {
+  const userObject = this.toObject();
+  
+  // Hassas bilgileri kaldır
+  delete userObject.password;
+  delete userObject.resetToken;
+  delete userObject.resetTokenExpire;
+  
   return userObject;
 };
 

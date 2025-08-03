@@ -102,7 +102,7 @@ const listingRightsSchema = new mongoose.Schema({
 });
 
 // Indexes for better performance
-listingRightsSchema.index({ userId: 1 });
+
 listingRightsSchema.index({ 'purchaseHistory.purchaseDate': -1 });
 listingRightsSchema.index({ 'usageHistory.usedAt': -1 });
 
