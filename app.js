@@ -1,4 +1,4 @@
-// app.js - EKSİKSİZ FULL VERSİYON - Server çoklu başlatma sorunu çözülmüş
+// app.js - PRODUCTION SERVER VERSİYONU - trackbangserver.com.tr için optimize edilmiş
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -16,21 +16,38 @@ let server;
 let isStarting = false;
 let isStarted = false;
 
+// Production/Development ortam tespiti
+const isProduction =  'production';
+const isDevelopment = !isProduction;
+
 console.log('🚀 Server başlatılıyor...');
+console.log(`🌍 Ortam: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
 
 // ============ MIDDLEWARE SIRALAMA ÖNEMLİ! ============
 
 // 1. CORS ayarları (EN ÖNCE)
-app.use(cors({
-  origin: '*',
+const corsOptions = {
+  origin: isProduction ? [
+    'https://trackbangserver.com.tr',
+    'https://www.trackbangserver.com.tr',
+    'https://trackbang.com',
+    'https://www.trackbang.com'
+  ] : '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
-}));
+};
+
+app.use(cors(corsOptions));
 
 // 2. Body parsing middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// 3. Trust proxy (NGINX/Apache proxy için gerekli)
+if (isProduction) {
+  app.set('trust proxy', 1);
+}
 
 // ============ STATİK DOSYA SUNUMU (ROUTES'TAN ÖNCE!) ============
 
@@ -54,11 +71,11 @@ if (!fs.existsSync(path.join(uploadsPath, 'store-listings'))) {
 
 // STATİK DOSYA MIDDLEWARE'LERİ - ROUTE'LARDAN ÖNCE OLMALI!
 app.use('/uploads', express.static(uploadsPath, {
-  maxAge: '1d',
-  etag: false,
+  maxAge: isProduction ? '7d' : '1h', // Production'da daha uzun cache
+  etag: true,
   setHeaders: (res, path) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', isProduction ? 'public, max-age=604800' : 'public, max-age=3600');
     
     // Content-Type'ı dosya uzantısına göre ayarla
     const ext = path.toLowerCase();
@@ -73,15 +90,15 @@ app.use('/uploads', express.static(uploadsPath, {
 }));
 
 app.use('/assets', express.static(assetsPath, {
-  maxAge: '1d',
-  etag: false,
+  maxAge: isProduction ? '7d' : '1h',
+  etag: true,
   setHeaders: (res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', isProduction ? 'public, max-age=604800' : 'public, max-age=3600');
   }
 }));
 
-// ============ DEBUG ROUTES (ÖNCE TANIMLA) ============
+// ============ DEBUG ROUTES (DEVELOPMENT ORTAMINDA) ============
 
 // Root endpoint - HTML Dashboard
 app.get('/', (req, res) => {
@@ -108,13 +125,28 @@ app.get('/', (req, res) => {
     external: Math.round(memory.external / 1024 / 1024)
   };
 
+  // Production'da basit response, development'ta detaylı dashboard
+  if (isProduction) {
+    res.json({
+      status: 'online',
+      service: 'Trackbang API Server',
+      version: '1.0.0',
+      environment: 'production',
+      mongodb: mongoStatusText,
+      uptime: `${uptimeHours}h ${uptimeMinutes}m ${uptimeSeconds}s`,
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+
+  // Development dashboard (eski HTML kodu)
   const html = `
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trackbang API Server Dashboard</title>
+    <title>Trackbang API Server Dashboard - Development</title>
     <style>
         * {
             margin: 0;
@@ -188,14 +220,6 @@ app.get('/', (req, res) => {
             background: ${isConnected ? '#ffffff' : '#f0f0f0'};
         }
         
-        .status-card.system {
-            border-color: #000000;
-        }
-        
-        .status-card.memory {
-            border-color: #000000;
-        }
-        
         .card-title {
             font-size: 1.2rem;
             font-weight: 600;
@@ -210,11 +234,6 @@ app.get('/', (req, res) => {
             margin-bottom: 10px;
             padding: 8px 0;
             border-bottom: 1px solid #cccccc;
-        }
-        
-        .status-item:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
         }
         
         .status-label {
@@ -244,61 +263,13 @@ app.get('/', (req, res) => {
             border-radius: 5px;
         }
         
-        .refresh-btn {
-            position: fixed;
-            bottom: 30px;
-            right: 30px;
-            background: #000000;
+        .env-badge {
+            background: #ff6b35;
             color: white;
-            border: 2px solid #ffffff;
-            border-radius: 50px;
-            padding: 15px 25px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
-        }
-        
-        .refresh-btn:hover {
-            background: #ffffff;
-            color: #000000;
-            border-color: #000000;
-            transform: translateY(-2px);
-        }
-        
-        .timestamp {
-            text-align: center;
-            color: #666666;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
             font-size: 0.9rem;
-            margin-top: 20px;
-            font-style: italic;
-            background: #f0f0f0;
-            padding: 10px;
-            border-radius: 10px;
-            border: 1px solid #cccccc;
-        }
-        
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 2rem;
-            }
-            
-            .status-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .endpoints-grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .container {
-                margin: 10px;
-            }
-            
-            body {
-                padding: 10px;
-            }
         }
     </style>
 </head>
@@ -306,7 +277,8 @@ app.get('/', (req, res) => {
     <div class="container">
         <div class="header">
             <h1>Trackbang API Server</h1>
-            <p>Sunucu Durumu ve API Yönetim Paneli</p>
+            <p>Development Dashboard</p>
+            <div class="env-badge">DEVELOPMENT MODE</div>
         </div>
         
         <div class="content">
@@ -323,29 +295,21 @@ app.get('/', (req, res) => {
                         <span class="status-label">Veritabanı:</span>
                         <span class="status-value">${mongoose.connection.name || 'test'}</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">Ready State:</span>
-                        <span class="status-value">${mongoStatus}</span>
-                    </div>
                 </div>
                 
                 <div class="status-card system">
                     <div class="card-title">⚡ Sistem Durumu</div>
                     <div class="status-item">
                         <span class="status-label">Çalışma Süresi:</span>
-                        <span class="status-value">${uptimeHours}s ${uptimeMinutes}d ${uptimeSeconds}sn</span>
+                        <span class="status-value">${uptimeHours}h ${uptimeMinutes}m ${uptimeSeconds}s</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">Node.js Versiyon:</span>
+                        <span class="status-label">Node.js:</span>
                         <span class="status-value">${process.version}</span>
                     </div>
                     <div class="status-item">
                         <span class="status-label">Port:</span>
                         <span class="status-value">${PORT}</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">Ortam:</span>
-                        <span class="status-value">${process.env.NODE_ENV || 'development'}</span>
                     </div>
                 </div>
                 
@@ -356,46 +320,13 @@ app.get('/', (req, res) => {
                         <span class="status-value">${memoryMB.rss} MB</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">Heap Total:</span>
-                        <span class="status-value">${memoryMB.heapTotal} MB</span>
-                    </div>
-                    <div class="status-item">
                         <span class="status-label">Heap Used:</span>
                         <span class="status-value">${memoryMB.heapUsed} MB</span>
                     </div>
-                    <div class="status-item">
-                        <span class="status-label">External:</span>
-                        <span class="status-value">${memoryMB.external} MB</span>
-                    </div>
                 </div>
-            </div>
-            
-            <div class="timestamp">
-                Son Güncelleme: ${new Date().toLocaleString('tr-TR')}
             </div>
         </div>
     </div>
-    
-    <button class="refresh-btn" onclick="window.location.reload()">
-        🔄 Yenile
-    </button>
-    
-    <script>
-        // Auto-refresh every 30 seconds
-        setTimeout(() => {
-            window.location.reload();
-        }, 30000);
-        
-        // Add some interactivity
-        document.querySelectorAll('.status-card').forEach(card => {
-            card.addEventListener('click', () => {
-                card.style.transform = 'scale(0.98)';
-                setTimeout(() => {
-                    card.style.transform = 'translateY(-5px)';
-                }, 100);
-            });
-        });
-    </script>
 </body>
 </html>`;
 
@@ -409,6 +340,7 @@ app.get('/health', (req, res) => {
     message: 'Server is healthy',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    environment: isProduction ? 'production' : 'development',
     memory: process.memoryUsage(),
     mongodb: {
       status: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
@@ -417,113 +349,81 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Uploads debug endpoints
-app.get('/debug/uploads', (req, res) => {
-  try {
-    const files = fs.readdirSync(uploadsPath, { withFileTypes: true });
-    const storeFiles = fs.existsSync(path.join(uploadsPath, 'store-listings')) 
-      ? fs.readdirSync(path.join(uploadsPath, 'store-listings'))
-      : [];
+// Debug endpoints sadece development'ta aktif
+if (isDevelopment) {
+  // Uploads debug endpoints
+  app.get('/debug/uploads', (req, res) => {
+    try {
+      const files = fs.readdirSync(uploadsPath, { withFileTypes: true });
+      const storeFiles = fs.existsSync(path.join(uploadsPath, 'store-listings')) 
+        ? fs.readdirSync(path.join(uploadsPath, 'store-listings'))
+        : [];
+      
+      res.json({
+        success: true,
+        uploadsPath,
+        totalFiles: files.length,
+        storeListingsFiles: storeFiles.length,
+        recentStoreFiles: storeFiles.slice(0, 10),
+        sampleUrls: storeFiles.slice(0, 3).map(file => 
+          `${req.protocol}://${req.get('host')}/uploads/store-listings/${file}`
+        )
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        uploadsPath,
+        pathExists: fs.existsSync(uploadsPath)
+      });
+    }
+  });
+
+  // Test image serving
+  app.get('/debug/test-image/:filename', (req, res) => {
+    const filename = req.params.filename;
+    const imagePath = path.join(uploadsPath, 'store-listings', filename);
     
-    res.json({
-      success: true,
-      uploadsPath,
-      totalFiles: files.length,
-      storeListingsFiles: storeFiles.length,
-      recentStoreFiles: storeFiles.slice(0, 10),
-      sampleUrls: storeFiles.slice(0, 3).map(file => 
-        `${req.protocol}://${req.get('host')}/uploads/store-listings/${file}`
-      )
+    console.log('🖼️ Test image request:', {
+      filename,
+      imagePath,
+      exists: fs.existsSync(imagePath)
     });
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: error.message,
-      uploadsPath,
-      pathExists: fs.existsSync(uploadsPath)
+    
+    if (!fs.existsSync(imagePath)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Image not found',
+        path: imagePath,
+        exists: false
+      });
+    }
+    
+    // Dosya tipini belirle
+    const ext = path.extname(filename).toLowerCase();
+    const mimeTypes = {
+      '.webp': 'image/webp',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif'
+    };
+    
+    const contentType = mimeTypes[ext] || 'application/octet-stream';
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    
+    const imageStream = fs.createReadStream(imagePath);
+    imageStream.pipe(res);
+    
+    imageStream.on('error', (error) => {
+      console.error('❌ Resim stream hatası:', error);
+      res.status(500).json({ error: error.message });
     });
-  }
-});
-
-// Test image serving
-app.get('/debug/test-image/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const imagePath = path.join(uploadsPath, 'store-listings', filename);
-  
-  console.log('🖼️ Test image request:', {
-    filename,
-    imagePath,
-    exists: fs.existsSync(imagePath)
   });
-  
-  if (!fs.existsSync(imagePath)) {
-    return res.status(404).json({
-      success: false,
-      message: 'Image not found',
-      path: imagePath,
-      exists: false
-    });
-  }
-  
-  // Dosya tipini belirle
-  const ext = path.extname(filename).toLowerCase();
-  const mimeTypes = {
-    '.webp': 'image/webp',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif'
-  };
-  
-  const contentType = mimeTypes[ext] || 'application/octet-stream';
-  
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  
-  const imageStream = fs.createReadStream(imagePath);
-  imageStream.pipe(res);
-  
-  imageStream.on('error', (error) => {
-    console.error('❌ Resim stream hatası:', error);
-    res.status(500).json({ error: error.message });
-  });
-});
-
-// Direct image serving test
-app.get('/debug/serve-image/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const imagePath = path.join(uploadsPath, 'store-listings', filename);
-  
-  console.log('📷 Direct serve request:', {
-    filename: filename,
-    path: imagePath
-  });
-  
-  // Dosya tipini belirle
-  const ext = path.extname(filename).toLowerCase();
-  const mimeTypes = {
-    '.webp': 'image/webp',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.png': 'image/png',
-    '.gif': 'image/gif'
-  };
-  
-  const contentType = mimeTypes[ext] || 'application/octet-stream';
-  
-  res.setHeader('Content-Type', contentType);
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  
-  const imageStream = fs.createReadStream(imagePath);
-  imageStream.pipe(res);
-  
-  imageStream.on('error', (error) => {
-    console.error('❌ Resim stream hatası:', error);
-    res.status(500).json({ error: error.message });
-  });
-});
+}
 
 // ============ ROUTES (STATİK DOSYALARDAN SONRA) ============
 
@@ -567,21 +467,23 @@ async function connectToMongoDB() {
 
     console.log('🔄 MongoDB\'ye bağlanılıyor...');
     
-    const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb+srv://221118047:9KY5zsMHQRJyEwGq@cluster0.rz2m5a4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+    const MONGO_URI =  "mongodb+srv://221118047:9KY5zsMHQRJyEwGq@cluster0.rz2m5a4.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
 
     if (!MONGO_URI) {
       throw new Error('MONGO_URI environment variable not found!');
     }
     
-    // Deprecated seçenekleri kaldır
+    // Production için optimize edilmiş MongoDB options
     const mongooseOptions = {
-      serverSelectionTimeoutMS: 30000,
-      connectTimeoutMS: 30000,
-      socketTimeoutMS: 30000,
-      maxPoolSize: 10,
+      serverSelectionTimeoutMS: isProduction ? 60000 : 30000,
+      connectTimeoutMS: isProduction ? 60000 : 30000,
+      socketTimeoutMS: isProduction ? 45000 : 30000,
+      maxPoolSize: isProduction ? 50 : 10,
       retryWrites: true,
-      heartbeatFrequencyMS: 10000,
-      family: 4
+      heartbeatFrequencyMS: isProduction ? 30000 : 10000,
+      family: 4,
+      bufferCommands: false,
+      bufferMaxEntries: 0
     };
     
     await mongoose.connect(MONGO_URI, mongooseOptions);
@@ -602,37 +504,41 @@ async function connectToMongoDB() {
 // 404 handler - EN SONDA OLMALI
 app.use('*', (req, res) => {
   console.log('❌ 404 - Route bulunamadı:', req.method, req.originalUrl);
-  res.status(404).json({
+  
+  const response = {
     success: false,
     message: `Route not found: ${req.method} ${req.originalUrl}`,
-    availableEndpoints: {
+    timestamp: new Date().toISOString()
+  };
+
+  // Development'ta daha detaylı bilgi ver
+  if (isDevelopment) {
+    response.availableEndpoints = {
       'Home': '/',
       'Health Check': '/health',
-      'Debug Uploads': '/debug/uploads',
-      'Test Image': '/debug/test-image/FILENAME.webp',
-      'Serve Image': '/debug/serve-image/FILENAME.webp',
-      'Static Files': '/uploads/store-listings/FILENAME.webp',
       'API Store': '/api/store/listings',
-      'API Messages': '/api/messages/health',
-      'API Messages Send': '/api/messages/send',
-      'API Messages Conversations': '/api/messages/conversations'
-    }
-  });
+      'API Messages': '/api/messages/health'
+    };
+  }
+
+  res.status(404).json(response);
 });
 
 // Global error handler
 app.use((error, req, res, next) => {
   console.error('💥 Global error:', error);
+  
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    error: process.env.NODE_ENV === 'production' ? 'Something went wrong' : error.message
+    timestamp: new Date().toISOString(),
+    error: isProduction ? 'Something went wrong' : error.message
   });
 });
 
 // ============ SERVER START ============
 
-const PORT = process.env.PORT || 5000;
+const PORT =  5000;
 
 async function startServer() {
   // Çoklu başlatmayı önle
@@ -649,19 +555,33 @@ async function startServer() {
     // MongoDB bağlantısını kur
     const dbConnected = await connectToMongoDB();
     
+    if (!dbConnected && isProduction) {
+      throw new Error('Production ortamında MongoDB bağlantısı zorunludur!');
+    }
+    
     if (!dbConnected) {
       console.log('⚠️ MongoDB bağlantısı başarısız ama server başlatılıyor...');
     }
     
     // Server'ı başlat
-    server = app.listen(PORT, '0.0.0.0', () => {
+    const bindAddress = isProduction ? '127.0.0.1' : '0.0.0.0'; // Production'da localhost, dev'de tümü
+    
+    server = app.listen(PORT, bindAddress, () => {
       isStarting = false;
       isStarted = true;
       
       console.log('');
       console.log('🎉 =================================');
       console.log(`🚀 SERVER ${PORT} PORTUNDA ÇALIŞIYOR!`);
-      console.log(`🌐 URL: http://localhost:${PORT}`);
+      console.log(`🌍 Ortam: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+      console.log(`🔗 Bind: ${bindAddress}`);
+      
+      if (isProduction) {
+        console.log(`🌐 URL: https://trackbangserver.com.tr`);
+      } else {
+        console.log(`🌐 URL: http://localhost:${PORT}`);
+      }
+      
       console.log('🎉 =================================');
     });
     
@@ -692,11 +612,12 @@ async function startServer() {
 function gracefulShutdown(signal) {
   console.log(`\n📱 ${signal} sinyali alındı, server kapatılıyor...`);
   
-  // Timeout ekle - 5 saniye içinde zorla kapat
+  // Timeout ekle - Production'da daha uzun süre ver
+  const timeoutMs = isProduction ? 10000 : 5000;
   const forceExitTimeout = setTimeout(() => {
     console.log('⚠️ Zorla kapatılıyor (timeout)...');
     process.exit(1);
-  }, 5000);
+  }, timeoutMs);
   
   if (server && isStarted) {
     isStarted = false; // Önce flag'i değiştir
@@ -736,6 +657,10 @@ process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
 // Unhandled promise rejection
 process.once('unhandledRejection', (err) => {
   console.error('💥 Unhandled Promise Rejection:', err.message);
+  if (isProduction) {
+    console.error('💥 Stack:', err.stack);
+  }
+  
   setTimeout(() => {
     if (server && isStarted) {
       server.close(() => {
@@ -750,6 +675,10 @@ process.once('unhandledRejection', (err) => {
 // Uncaught exception
 process.once('uncaughtException', (err) => {
   console.error('💥 Uncaught Exception:', err.message);
+  if (isProduction) {
+    console.error('💥 Stack:', err.stack);
+  }
+  
   setTimeout(() => {
     if (server && isStarted) {
       server.close(() => {
